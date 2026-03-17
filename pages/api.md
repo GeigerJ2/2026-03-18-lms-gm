@@ -97,7 +97,7 @@ fishnchips.order(chips=1, fish=2)
 
 # API: Flat imports — in aiida-core
 
-Good: clean re-exports in `aiida.orm` and `aiida.engine`
+Re-exports in `aiida.orm` and `aiida.engine` ✅
 
 ```python
 # aiida/orm/__init__.py — 90+ classes re-exported
@@ -110,36 +110,38 @@ from .querybuilder import *
 from aiida.orm import Int, CalcJobNode, QueryBuilder  # all flat
 ```
 
-By convention, anything not re-exported (e.g. `aiida.orm.nodes.caching.NodeCaching`) is **private API** — but the line gets blurry with users, workflow devs, plugin devs. Notably, `LinkPair` and `LinkTriple` are re-exported, but `LinkQuadruple` from the same `utils.links` module is not.
+By convention, anything not importable from the second level, like `aiida.orm`, `aiida.engine` (e.g. `aiida.orm.nodes.caching.NodeCaching`) is **private API**.
 
-<v-click>
+However, the line gets blurry between users, workflow devs, plugin devs, so it is not strictly enforced in `aiida-core`.
 
-Bad: circular imports force workarounds
+<!-- <v-click> -->
+<!---->
+<!-- Bad: circular imports force workarounds -->
+<!---->
+<!-- ```python -->
+<!-- # The cycle: orm → engine → orm -->
+<!-- # 1. aiida.engine.processes.process imports at runtime: -->
+<!-- from aiida import orm                              # pulls in all of orm -->
+<!-- from aiida.orm.nodes.process.calculation.calcjob import CalcJobNode -->
+<!---->
+<!-- # 2. aiida.orm.nodes.process.process needs engine types, but can't -->
+<!-- #    import at runtime (orm is still loading!) — so: -->
+<!-- if TYPE_CHECKING: -->
+<!--     from aiida.engine.processes import ExitCode, Process  # type-only -->
+<!---->
+<!-- # 3. aiida.orm.utils.managers works around it with a delayed import: -->
+<!-- class NodeLinksManager: -->
+<!--     def __init__(self, ...): -->
+<!--         from aiida.orm import Node  # "to avoid circular imports" -->
+<!-- ``` -->
+<!---->
+<!-- </v-click> -->
 
-```python
-# The cycle: orm → engine → orm
-# 1. aiida.engine.processes.process imports at runtime:
-from aiida import orm                              # pulls in all of orm
-from aiida.orm.nodes.process.calculation.calcjob import CalcJobNode
-
-# 2. aiida.orm.nodes.process.process needs engine types, but can't
-#    import at runtime (orm is still loading!) — so:
-if TYPE_CHECKING:
-    from aiida.engine.processes import ExitCode, Process  # type-only
-
-# 3. aiida.orm.utils.managers works around it with a delayed import:
-class NodeLinksManager:
-    def __init__(self, ...):
-        from aiida.orm import Node  # "to avoid circular imports"
-```
-
-</v-click>
-
-<v-click>
-
-**How could this be resolved?** Extract shared types (`ExitCode`, `ProcessSpec`, link types) into a standalone `aiida.common.process_types` module that both `orm` and `engine` import from — breaking the cycle at the root rather than patching around it.
-
-</v-click>
+<!-- <v-click> -->
+<!---->
+<!-- **How could this be resolved?** Extract shared types (`ExitCode`, `ProcessSpec`, link types) into a standalone `aiida.common.process_types` module that both `orm` and `engine` import from — breaking the cycle at the root rather than patching around it. -->
+<!---->
+<!-- </v-click> -->
 
 ---
 
@@ -150,6 +152,7 @@ The module name provides context — don't make users lose it
 ```python
 # Bad — where does order() come from? Is it defined here? Imported?
 from fishnchips import order
+
 
 def eat_takeaways():
     meal = order(chips=1)  # ordering what? from where?
@@ -180,58 +183,46 @@ Same reason `requests.get()` works — you're not meant to `from requests import
 
 # API: Naming — short as possible, clear as necessary
 
-The module name is already context — don't repeat it
+The module/class name is already context — don't repeat it
+
+<div class="grid grid-cols-2 gap-4">
+<div>
 
 ```python
-# Bad — redundant, buries the important word in the middle
+# ❌ redundant, buries the important word
 fishnchips.order_fishnchips_food()
 fishnchips.place_fish_and_chips_order_for_meal()
-```
 
-<v-click>
-
-```python
-# Good — short, the module name already provides context
+# ✅ short, module name provides context
 fishnchips.order()
 ```
 
-</v-click>
-
----
-
-# API: Naming — in aiida-core
-
-Bad: redundant naming in `KpointsData`
-
-```python
-# aiida/orm/nodes/data/array/kpoints.py
-class KpointsData(ArrayData):
-    def set_kpoints(self, kpoints, ...): ...
-    def get_kpoints(self, ...): ...
-    def set_kpoints_mesh(self, mesh, offset=None): ...
-    def get_kpoints_mesh(self, print_list=False): ...
-    def set_kpoints_mesh_from_density(self, distance, ...): ...
-```
-
-```python
-# User code — "kpoints" everywhere
-kpoints = KpointsData()
-kpoints.set_kpoints_mesh([4, 4, 4])
-mesh = kpoints.get_kpoints_mesh()
-```
+</div>
+<div>
 
 <v-click>
 
-The class already says "Kpoints" — the methods shouldn't repeat it:
+```python
+# aiida/orm/nodes/data/array/kpoints.py ❌
+class KpointsData(ArrayData):
+    def set_kpoints_mesh(self, mesh, ...): ...
+    def get_kpoints_mesh(self, ...): ...
+    def set_kpoints_mesh_from_density(self, ...): ...
+
+# "kpoints" said three times in one line:
+kpoints.set_kpoints_mesh([4, 4, 4])
+```
 
 ```python
-# Better — let the class name provide context
-kpoints = KpointsData()
+# ✅ let the class name provide context
 kpoints.set_mesh([4, 4, 4])
 mesh = kpoints.get_mesh()
 ```
 
 </v-click>
+
+</div>
+</div>
 
 ---
 
@@ -251,6 +242,26 @@ def order(chips=None, fish=None, timeout=None):
 
 <v-click>
 
+How? Module attributes are just dict entries — anyone can reassign them:
+
+```python
+# User thinks it's a config knob (the name invites this)
+import fishnchips
+fishnchips.DEFAULT_TIMEOUT = 1
+
+# Test pollution — no teardown, leaks into subsequent tests
+def test_quick_order():
+    fishnchips.DEFAULT_TIMEOUT = 1  # speed up tests
+    ...
+    # forgot to reset — every test that runs after is affected
+```
+
+</v-click>
+
+---
+
+# API: Avoid global configuration
+
 ```python
 # Good — keyword argument with a sensible default
 def order(chips=None, fish=None, timeout=10): ...
@@ -262,7 +273,7 @@ import functools
 order_fast = functools.partial(fishnchips.order, timeout=1)
 ```
 
-</v-click>
+
 
 <v-click>
 
@@ -313,7 +324,8 @@ takeaway = fishnchips.Shop("Takeaway")
 
 <v-click>
 
-When your library needs state between calls, a class is the right tool. See `requests.Session` — holds auth, headers, and reuses TCP connections.
+When your library needs state between calls, a class is the right tool.
+<!-- See `requests.Session` — holds auth, headers, and reuses TCP connections. -->
 
 </v-click>
 
@@ -321,29 +333,30 @@ When your library needs state between calls, a class is the right tool. See `req
 
 # API: Avoid global state — in aiida-core
 
-Bad: four `global` singletons scattered across the codebase
+Four `global` singletons scattered across the codebase ❌
 
 ```python
 # aiida/manage/configuration/__init__.py
 CONFIG: Optional['Config'] = None
+
 def get_config(create=False) -> 'Config':
     global CONFIG  # noqa: PLW0603
     ...
-
-# aiida/manage/manager.py
-MANAGER: Optional['Manager'] = None
-def get_manager() -> 'Manager':
-    global MANAGER  # noqa: PLW0603
-    ...
-
-# Also: PROGRESS_REPORTER, OBJECT_LOADER — same pattern
 ```
+
+Also: `MANAGER`, `PROGRESS_REPORTER`, `OBJECT_LOADER` — same pattern.
 
 <v-click>
 
 The saving grace: `profile_context()` and `enable_caching()` wrap the most dangerous state in context managers. But the globals remain — not thread-safe, not async-safe.
 
-**Fix:** replace `global` with `contextvars.ContextVar` (PEP 567):
+</v-click>
+
+---
+
+# API: Avoid global state — in aiida-core
+
+For `CONFIG` specifically: replace `global` with `contextvars.ContextVar` (PEP 567):
 
 ```python
 from contextvars import ContextVar
@@ -355,13 +368,11 @@ def get_config() -> Config:
     ...
 
 @contextmanager
-def profile_context(profile=None):
-    token = _config.set(...)        # scoped, thread/async-safe
+def config_context(profile=None):
+    token = _config.set(load_config())  # scoped, thread/async-safe
     try: yield
-    finally: _config.reset(token)   # clean restore via token
+    finally: _config.reset(token)       # clean restore via token
 ```
-
-</v-click>
 
 ---
 
@@ -408,15 +419,12 @@ except fishnchips.Error:
 
 # API: Errors — in aiida-core
 
-Good: semantic exception hierarchy with useful subclasses
+Semantic exception hierarchy with useful subclasses ✅
 
 ```python
 # aiida/common/exceptions.py
 class MissingEntryPointError(EntryPointError):
     """Raised when the requested entry point is not registered."""
-
-class MultipleEntryPointError(EntryPointError):
-    """Raised when the entry point cannot uniquely be resolved."""
 
 class LockedProfileError(AiidaException):
     """Raised if attempting to access a locked profile."""
@@ -424,29 +432,39 @@ class LockedProfileError(AiidaException):
 
 <v-click>
 
-Bad: bare `Exception` raise instead of a proper AiiDA exception
+<div class="grid grid-cols-2 gap-4">
+<div>
+
+bare `Exception` instead of AiiDA exception ❌
 
 ```python
 # aiida/orm/logs.py
 if not isinstance(entity, nodes.Node):
-    raise Exception('Only node logs are stored')  # bare Exception!
+    raise Exception(
+        'Only node logs are stored'
+    )  # bare Exception!
 ```
 
-Bad: overly broad `except Exception: pass`
+</div>
+
+<div>
+
+overly broad `except Exception: pass` ❌
 
 ```python
 # aiida/transports/plugins/async_backend.py
 try:
-    result = subprocess.run(['ssh', '-V'], capture_output=True, ...)
+    result = subprocess.run(['ssh', '-V'], ...)
     match = re.search(r'OpenSSH_(\d+)', output)
     ...
 except Exception:  # silently swallows ALL errors
     pass
 ```
 
-</v-click>
+</div>
+</div>
 
----
+</v-click>
 
 <!-- # API: Backwards compatibility — keyword args are your friend -->
 <!---->
@@ -551,11 +569,15 @@ except Exception:  # silently swallows ALL errors
 <!---->
 <!-- </v-click> -->
 <!---->
+
 ---
 
 # API: Minimize mutable state and side effects
 
 Prefer returning new values over mutating inputs
+
+<div class="grid grid-cols-2 gap-4">
+<div>
 
 ```python
 # Surprising — mutates the input
@@ -571,6 +593,9 @@ normed = normalize(raw)
 # raw is now [0.33, 0.66, 1.0] — surprise!
 # raw IS normed — they're the same object
 ```
+
+</div>
+<div>
 
 <v-click>
 
@@ -588,6 +613,9 @@ normed = normalize(raw)
 
 </v-click>
 
+</div>
+</div>
+
 <v-click>
 
 - `frozen=True` dataclasses are immutable by default
@@ -600,7 +628,7 @@ normed = normalize(raw)
 
 # API: Minimize mutable state — in aiida-core
 
-Bad: slurm scheduler mutated the caller's job list ([#7155](https://github.com/aiidateam/aiida-core/pull/7155))
+Slurm scheduler mutated the caller's job list ([#7155](https://github.com/aiidateam/aiida-core/pull/7155))
 
 ```python
 # aiida/engine/processes/calcjobs/manager.py (before fix)
@@ -615,24 +643,24 @@ class JobsList:
 # aiida/schedulers/plugins/slurm.py
 def _get_joblist_command(self, jobs=None, ...):
     joblist = jobs              # no copy — same object as _polling_jobs!
-    joblist.append(jobs[0])    # mutates _polling_jobs → jobs appear twice
+    joblist.append(jobs[0])     # mutates _polling_jobs → jobs appear twice
 ```
 
 ---
 
 # API: Minimize mutable state — in aiida-core
 
-Fix: make the data immutable so mutation is impossible
+Fix: make the data immutable so mutation is impossible ✅
 
 ```python
-# manager.py (after fix)
+# aiida/engine/processes/calcjobs/manager.py (after fix)
 self._polling_jobs: frozenset[str] = frozenset()  # immutable
 
 async def _get_jobs_from_scheduler(self):
     self._polling_jobs = frozenset(str(j) for j in self._job_update_requests)
-    scheduler.get_jobs(jobs=self._polling_jobs)    # passes frozenset directly
+    scheduler.get_jobs(jobs=self._polling_jobs)    # passes the frozenset
 
-# slurm.py (after fix)
+# aiida/schedulers/plugins/slurm.py (after fix)
 def _get_joblist_command(self, jobs=None, ...):
     joblist = list(jobs)       # converts to list for local use — can't mutate caller
 ```
@@ -667,7 +695,7 @@ db.query("SELECT ...", sanitize=True)  # easy to forget sanitize=True
 **Pit of success principles**:
 
 - **Safe defaults** — SSL on, escaping on, validation on
-- **Unsafe options require explicit action** — `verify=False`, `trust_env=False`
+- **Unsafe options require explicit action** — `verify=False`, `trust_env=True`
 - **Make wrong code look wrong** — if misuse looks identical to correct use, the API has failed
 - Types help enforce this: `SafeQuery` vs `RawQuery` as distinct types
 
@@ -724,10 +752,10 @@ response = client.get("/users", params={"page": 2})
 
 # API: Progressive disclosure — in aiida-core
 
-Anti-pattern: `core.ssh` transport — 18 options upfront
+`core.ssh` transport — 18 options upfront ❌
 
 ```bash
-❯ verdi -p dev computer configure core.ssh daint
+❯ verdi computer configure core.ssh daint
 Report: enter ? for help.
 Report: enter ! to ignore the default and set no value.
 User name [geiger_j]:
@@ -749,14 +777,13 @@ Use login shell when executing command [Y/n]:
 Connection cooldown time (s) [15.0]:
 ```
 
-
 Most users (and developers) don't know what half of these mean — and most are just defaults.
 
 ---
 
 # API: Progressive disclosure — in aiida-core
 
-Better: `core.ssh_async` — leverage the user's existing SSH config
+Better: `core.ssh_async` (@khsrali) — leverage the user's existing SSH config ✅
 
 ```bash
 ❯ verdi computer configure core.ssh_async daint
@@ -838,13 +865,17 @@ def connect(url: str) -> Iterator[Connection]:
 
 </v-click>
 
+<v-click>
+
 If your API involves **acquire/release**, **open/close**, or **setup/teardown**, make it a context manager. Users get correctness for free.
+
+</v-click>
 
 ---
 
 # API: Context managers — in aiida-core
 
-Good: `Transport` supports nested context managers with reference counting
+`Transport` supports nested context managers with reference counting ✅
 
 ```python
 # aiida/transports/transport.py
@@ -864,7 +895,7 @@ async def __aexit__(self, ...): ...
 
 <v-click>
 
-This is excellent design — users can nest `with transport:` blocks safely, and both sync and async paths are supported. The transport connection is never leaked, even on exceptions.
+Users can nest `with transport:` blocks safely, and both sync and async paths are supported. The transport connection is never leaked, even on exceptions.
 
 </v-click>
 
@@ -872,7 +903,7 @@ This is excellent design — users can nest `with transport:` blocks safely, and
 
 # API: Context managers — in aiida-core (cont.)
 
-Bad: `get_container()` returned an unmanaged resource ([#6741](https://github.com/aiidateam/aiida-core/pull/6741))
+`get_container()` returns an unmanaged resource ❌
 
 ```python
 # aiida/storage/psql_dos/migrator.py (before fix)
@@ -889,20 +920,22 @@ container.init_container(clear=True)
 
 # API: Context managers — in aiida-core (cont.)
 
-Fix: replace with a context manager, deprecate the old method
+Fix: replace with a context manager, deprecate the old method ([#6741](https://github.com/aiidateam/aiida-core/pull/6741)) ✅
 
 ```python
-# after fix
+# aiida/storage/psql_dos/migrator.py (after fix)
 def get_container(self):
-    raise DeprecatedError(
-        'Do not use get_container as it might leave resources open. '
-        'Use container_context() instead.'
+    from aiida.common.warnings import warn_deprecation
+    warn_deprecation(
+        'get_container() may leave resources open, use container_context() instead.',
+        version=3,
     )
+    return Container(get_filepath_container(self.profile))
 
 @contextmanager
 def container_context(self) -> Generator[Container, None, None]:
     with Container(get_filepath_container(self.profile)) as container:
-        yield container
+        yield container  # Container.__exit__ handles close()
 
 # Callers now can't forget:
 with self.container_context() as container:
@@ -912,61 +945,27 @@ with self.container_context() as container:
 
 ---
 
-<!-- # API: Async API mirrors -->
-<!---->
-<!-- Designing sync + async without duplicating everything -->
-<!---->
-<!-- ```python -->
-<!-- import httpx -->
-<!---->
-<!-- # Sync client -->
-<!-- resp = httpx.get("https://example.com") -->
-<!---->
-<!-- # Async client — same API shape -->
-<!-- async with httpx.AsyncClient() as client: -->
-<!--     resp = await client.get("https://example.com") -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- **Design considerations**: -->
-<!---->
-<!-- - Mirror the sync API as closely as possible — same method names, same parameters -->
-<!-- - Use separate classes (`Client` / `AsyncClient`), not a flag -->
-<!-- - Types help: `-> Response` vs `-> Awaitable[Response]` are distinct contracts -->
-<!-- - Avoid `is_async` boolean parameters — they make types imprecise -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- ```python -->
-<!-- # Bad — one class, unclear types -->
-<!-- client.get(url, async_mode=True)  # returns... what? -->
-<!---->
-<!---->
-<!-- # Good — distinct types make the contract clear -->
-<!-- def get(self, url: str) -> Response: ...  # Client -->
-<!-- async def get(self, url: str) -> Response: ...  # AsyncClient -->
-<!-- ``` -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- --- -->
-
 # API: Don't overuse Python's expressiveness
 
 Just because you *can* doesn't mean you *should*
 
+<div class="grid grid-cols-2 gap-4">
+<div>
+
 ```python
 # Bad — operator overloading on a non-numeric type
 class Order:
-    def __add__(self, other):  # order1 + order2 merges orders??
+    # an Order? a list[Order]? mutates self?
+    def __add__(self, other):
         return merge_orders(self, other)
 
-    def __mul__(self, n):  # order * 3 triples quantities??
+    # a new order? three copies? quantities tripled?
+    def __mul__(self, n):
         return scale_order(self, n)
 ```
+
+</div>
+<div>
 
 <v-click>
 
@@ -979,89 +978,16 @@ class Order:
 
 </v-click>
 
+</div>
+</div>
+
 <v-click>
 
 **Rules of thumb:**
 
 - Only override `+`, `*` etc. for number/vector types
-- Only override `[]` for collections
+- Only override `[]` (`__getitem__`) for actual collections — it signals *"this is a sequence or mapping"*
 - Property getters should be cheap — no I/O, no exceptions
 - **If the type signature is too hard to write, the API might be a bad idea**
 
 </v-click>
-
----
-
-<!-- # API: Deprecation strategy -->
-<!---->
-<!-- Guide users from old API to new -->
-<!---->
-<!-- ```python -->
-<!-- import warnings -->
-<!-- from typing import overload -->
-<!---->
-<!---->
-<!-- @overload -->
-<!-- def connect(url: str) -> Connection: ... -->
-<!-- @overload -->
-<!-- def connect(host: str, port: int) -> Connection: ... -->
-<!---->
-<!---->
-<!-- def connect(url_or_host: str, port: int | None = None) -> Connection: -->
-<!--     if port is not None: -->
-<!--         warnings.warn( -->
-<!--             "connect(host, port) is deprecated, use connect(url) instead. " -->
-<!--             "Will be removed in v3.0.", -->
-<!--             DeprecationWarning, -->
-<!--             stacklevel=2, -->
-<!--         ) -->
-<!--         url_or_host = f"https://{url_or_host}:{port}" -->
-<!--     return Connection(url_or_host) -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- - `@overload` keeps both old and new signatures typed during the transition -->
-<!-- - `DeprecationWarning` is shown by test runners but hidden in production -->
-<!-- - `stacklevel=2` points the warning at the **caller**, not the library -->
-<!-- - Set a clear removal timeline (e.g., "removed in v3.0") -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- --- -->
-<!---->
-<!-- # API: Deprecation strategy — in aiida-core -->
-<!---->
-<!-- Good: centralized utility with configurable filtering -->
-<!---->
-<!-- ```python -->
-<!-- # aiida/common/warnings.py -->
-<!-- def warn_deprecation(message: str, version: int, stacklevel: int = 2) -> None: -->
-<!--     from_config = get_config_option('warnings.showdeprecations') -->
-<!--     from_environment = os.environ.get(f'AIIDA_WARN_v{version}') -->
-<!---->
-<!--     if from_config or from_environment: -->
-<!--         message = f'{message} (this will be removed in v{version})' -->
-<!--         warnings.warn(message, AiidaDeprecationWarning, stacklevel=stacklevel) -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- Bad: informal deprecation without concrete migration path -->
-<!---->
-<!-- ```python -->
-<!-- # aiida/transports/plugins/ssh.py -->
-<!-- def chdir(self, path): -->
-<!--     """ -->
-<!--     PLEASE DON'T USE `chdir()` IN NEW DEVELOPMENTS, INSTEAD -->
-<!--     DIRECTLY PASS ABSOLUTE PATHS TO INTERFACE. -->
-<!--     `chdir()` is DEPRECATED and will be removed in the next -->
-<!--     major version. -->
-<!--     """ -->
-<!-- ``` -->
-<!---->
-<!-- "PLEASE DON'T USE" in a docstring is not a deprecation strategy. Which interface? What's the concrete replacement? A proper deprecation tells you *exactly* what to write instead. -->
-<!---->
-<!-- </v-click> -->
-
-<!-- PR 7116 (on_unhandled_failure) added to types.md Literals/Enums section -->

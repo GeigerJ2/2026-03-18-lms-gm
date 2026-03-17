@@ -31,44 +31,6 @@ def order(chips: int, fish: int, timeout: float = 10.0) -> Receipt: ...
 
 ---
 
-# Types: Function signatures — in aiida-core
-
-Good: precise generic signature — the return type *is* the documentation
-
-```python
-# aiida/common/lang.py
-def type_check(
-    what: T, of_type: Any, msg: str | None = None, allow_none: bool = False
-) -> T:
-    """Verify that object 'what' is of type 'of_type'."""
-    if allow_none and what is None:
-        return what
-    if not isinstance(what, of_type):
-        raise TypeError(msg or f"Got '{type(what)}', expecting '{of_type}'")
-    return what  # returns T — same type as input
-```
-
-<v-click>
-
-Bad: `CalcInfo` inherits from `DefaultFieldsAttributeDict` — 20+ fields, all implicitly `Optional`, no signature at all
-
-```python
-# aiida/common/datastructures.py
-class CalcInfo(DefaultFieldsAttributeDict):
-    _default_fields = (
-        'job_environment', 'email', 'email_on_started', 'uuid',
-        'prepend_text', 'append_text', 'num_machines',
-        'num_mpiprocs_per_machine', 'codes_info', ...
-    )
-    # No constructor signature — anything goes
-```
-
-A user constructing a `CalcInfo` has no IDE autocomplete and no type checking.
-
-</v-click>
-
----
-
 # Types: `stubgen` — Python's header files
 
 Generate `.pyi` stub files that show only the API surface
@@ -80,28 +42,36 @@ stubgen -p mypackage -o stubs/
 
 <v-click>
 
-```python
-# mypackage/shop.py (full implementation)
-def order(chips: int, fish: int, timeout: float = 10.0) -> Receipt:
-    validated = _check_availability(chips, fish)
-    response = _call_api(validated, timeout)
-    return Receipt.from_response(response)
-```
-
-```python
-# stubs/mypackage/shop.pyi (generated — just the contract)
-def order(chips: int, fish: int, timeout: float = 10.0) -> Receipt: ...
-```
+- `.pyi` files are like C header files — types and signatures, no implementation
+- `stubgen` (from mypy) or `pyright --createstub` auto-generates them
+- Great for reviewing your public API at a glance — **if the stub looks messy, the API is messy**
+- Friendlier to LLM context than the full implementation 😉
 
 </v-click>
 
+---
+
+# Types: `stubgen` — aiida-core example
+
+`stubs/aiida/engine/processes/exit_code.pyi` — generated, nothing hand-written:
+
+```python
+from aiida.common.extendeddicts import AttributeDict
+from typing import NamedTuple
+
+class ExitCode(NamedTuple):
+    status: int = ...
+    message: str | None = ...
+    invalidates_cache: bool = ...
+    def format(self, **kwargs: str) -> ExitCode: ...
+
+class ExitCodesNamespace(AttributeDict):
+    def __call__(self, identifier: int | str) -> ExitCode: ...
+```
+
 <v-click>
 
-- `.pyi` files are **exactly** like C header files — types and signatures, no implementation
-- `stubgen` (from mypy) or `pyright --createstub` auto-generates them
-- Ship stubs with your package (`py.typed` marker) for downstream type checking
-- Great for reviewing your public API at a glance — **if the stub looks messy, the API is messy**
-- Also, messes up your LLM context much less than providing the full implementation, when discussing top-level design 😉
+The full implementation is ~80 lines. The stub tells you everything a caller needs in 10.
 
 </v-click>
 
@@ -141,72 +111,42 @@ The type checker **forces you to decide**: should this return `str | None`? Or s
 
 ---
 
-<!-- # Types: Types catch bugs — in aiida-core -->
-<!---->
-<!-- Real bugs found by adding types to 5 scheduler plugins ([#7156](https://github.com/aiidateam/aiida-core/pull/7156)) -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- ```python -->
-<!-- # 1. Wrong return type — annotation said dict, code returned str -->
-<!-- def _get_detailed_job_info_command(self, job_id: str) -> dict[str, Any]:  # wrong! -->
-<!--     return f"bjobs -l {escape_for_bash(job_id)}"  # actually returns str -->
-<!-- ``` -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- ```python -->
-<!-- # 2. Wrong value type — str assigned where int expected -->
-<!-- this_job.num_mpiprocs = str(element_child.data).strip()  # str, not int! -->
-<!-- # Fix: -->
-<!-- this_job.num_mpiprocs = int(str(element_child.data).strip()) -->
-<!-- ``` -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- ```python -->
-<!-- # 3. Silent None return — callers didn't handle it -->
-<!-- def _parse_time_string(self, string: str, fmt: str = "...") -> datetime: -->
-<!--     if string == "-": -->
-<!--         return None  # type error! None is not datetime -->
-<!---->
-<!---->
-<!-- # Fix: raise ValueError instead, handle at call site -->
-<!-- ``` -->
-<!---->
-<!-- </v-click> -->
-
 # Types: Types catch bugs — in aiida-core
 
-Bad: functions returning `None` instead of raising — invisible to callers
-
-```python
-# aiida/orm/logs.py
-def create_entry_from_record(self, record: LogRecord) -> Optional['Log']:
-    dbnode_id = record.__dict__.get('dbnode_id', None)
-
-    if dbnode_id is None:
-        return None  # caller must remember to check!
-```
+Real bugs found by adding types to 5 scheduler plugins ([#7156](https://github.com/aiidateam/aiida-core/pull/7156) by `danielhollas`)
 
 <v-click>
 
-Bad: untyped utility functions — no contract at all
-
 ```python
-# aiida/transports/transport.py
-def validate_positive_number(ctx, param, value):  # no annotations!
-    if not isinstance(value, (int, float)) or value < 0:
-        from click import BadParameter
-        raise BadParameter(f'{value} is not a valid positive number')
-    return value
+# 1. Wrong return type — annotation said dict, code returned str
+def _get_detailed_job_info_command(self, job_id: str) -> dict[str, Any]:  # wrong!
+    return f"bjobs -l {escape_for_bash(job_id)}"  # actually returns str
 ```
 
-Without annotations, the type checker can't verify callers pass the right types — and the return type is invisible.
+</v-click>
+
+<v-click>
+
+```python
+# 2. Wrong value type — str assigned where int expected
+this_job.num_mpiprocs = str(element_child.data).strip()  # str, not int!
+# Fix:
+this_job.num_mpiprocs = int(str(element_child.data).strip())
+```
+
+</v-click>
+
+<v-click>
+
+```python
+# 3. Silent None return — callers didn't handle it
+def _parse_time_string(self, string: str, fmt: str = "...") -> datetime:
+    if string == "-":
+        return None  # type error! None is not datetime
+
+
+# Fix: raise ValueError instead, handle at call site
+```
 
 </v-click>
 
@@ -216,8 +156,13 @@ Without annotations, the type checker can't verify callers pass the right types 
 
 When the return type is too broad, your code needs refactoring
 
+<div class="grid grid-cols-2 gap-4">
+<div>
+
 ```python
-def process_payment(order: Order) -> str | int | dict | None:
+def process_payment(
+    order: Order
+) -> str | int | dict | None:
     if order.method == "card":
         return {"tx_id": "abc", "status": "ok"}
     elif order.method == "cash":
@@ -227,15 +172,10 @@ def process_payment(order: Order) -> str | int | dict | None:
     return None
 ```
 
+</div>
+<div>
+
 <v-click>
-
-If you struggle to write the return type, **the function is doing too many things**.
-
-</v-click>
-
----
-
-# Types: Types reveal design smells
 
 ```python
 @dataclass
@@ -245,10 +185,74 @@ class PaymentResult:
     receipt_number: int
 
 
+# one clear return type,
+# one clear responsibility
 def process_payment(
     order: Order,
-) -> PaymentResult: ...  # one clear return type, one clear responsibility
+) -> PaymentResult: ...
 ```
+
+</v-click>
+
+</div>
+</div>
+
+<v-click>
+
+If you struggle to write the return type, **the function is doing too many things**.
+
+</v-click>
+
+---
+
+# Types: Types reveal design smells — aiida-core
+
+Breaking the dict contract: `None` instead of `KeyError` ([#7136](https://github.com/aiidateam/aiida-core/pull/7136))
+
+<div class="grid grid-cols-2 gap-4">
+<div>
+
+```python
+# aiida/common/extendeddicts.py — the root cause
+class DefaultFieldsAttributeDict(AttributeDict):
+    def __getitem__(self, key: str) -> Any | None:
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            if key in self._default_fields:
+                return None  # breaks the dict contract
+                             # — KeyError expected!
+            raise
+```
+
+</div>
+<div>
+
+<v-click>
+
+```python
+# aiida/schedulers/datastructures.py — victim
+class JobInfo(DefaultFieldsAttributeDict):
+    if TYPE_CHECKING:
+        num_machines: int        # int (not Optional)...
+        allocated_machines: list[MachineInfo]  # same
+```
+
+```python
+# aiida/schedulers/plugins/slurm.py
+# field may be None at runtime, but type checker
+# sees int — contradiction:
+if (
+    this_job.allocated_machines is not None
+    and this_job.num_machines is not None
+):  # type: ignore[redundant-expr]
+    ...
+```
+
+</v-click>
+
+</div>
+</div>
 
 ---
 
@@ -259,13 +263,16 @@ Structure your data, don't just bag it
 ```python
 # The "stringly typed" approach — no safety, no autocomplete
 user = {"name": "Alice", "age": 30, "emial": "alice@example.com"}
-#                                      ^^^^^ typo goes unnoticed
+#                                    ^^^^^ typo goes unnoticed
 ```
 
 <v-click>
 
+<div class="grid grid-cols-2 gap-4">
+<div>
+
 ```python
-# TypedDict — lightweight, catches key typos at check time
+# TypedDict — lightweight, catches key typos
 from typing import TypedDict
 
 
@@ -279,14 +286,11 @@ user: User = {"name": "Alice", "age": 30, "emial": "..."}
 #                                          ^^^^^^ error!
 ```
 
-</v-click>
-
----
-
-# Types: TypedDict and dataclasses over plain dicts
+</div>
+<div>
 
 ```python
-# dataclass — full type safety + methods + immutability option
+# dataclass: type safety + methods + immutability option
 from dataclasses import dataclass
 
 
@@ -297,68 +301,50 @@ class User:
     email: str
 ```
 
----
+</div>
+</div>
 
-# Types: TypedDict and dataclasses — aiida-core lesson
-
-What happens when you use a dict subclass instead
-
-```python
-# Custom dict subclass makes all fields secretly Optional
-class JobInfo(DefaultFieldsAttributeDict):
-    if TYPE_CHECKING:
-        job_id: str  # looks required...
-        num_machines: int  # looks required...
-        # ...but __getitem__ returns None for missing keys!
-
-
-# Every access needs:
-if this_job.num_machines is not None:  # type: ignore[redundant-expr]
-    ...  # "redundant" — but actually necessary due to dict magic
-```
+</v-click>
 
 <v-click>
 
-> "All this hacking around we need now for the types seems like a massive code smell
-> that we should've never overwritten `__getitem__` like that in the first place..."
->
-> The whole module should use pydantic or dataclasses in v3.
+`NamedTuple` sits between the two: immutable like a frozen dataclass, but also tuple-compatible (unpackable, positionally accessible). Used in aiida-core for `ExitCode`.
 
 </v-click>
 
 ---
 
-# Types: TypedDict and dataclasses — aiida-core (cont.)
-
-What it looks like when done right:
-
-```python
-# aiida/engine/processes/exit_code.py
-class ExitCode(NamedTuple):
-    status: int = 0
-    message: Optional[str] = None
-    invalidates_cache: bool = False
-
-    def format(self, **kwargs: str) -> 'ExitCode':
-        message = self.message.format(**kwargs)
-        return ExitCode(self.status, message, self.invalidates_cache)
-```
-
-<v-click>
-
-```python
-# aiida/tools/_dumping/utils.py
-@dataclass(frozen=True)
-class DumpTimes:
-    current: datetime = field(default_factory=lambda: timezone.now())
-    last: Optional[datetime] = None
-```
-
-`NamedTuple` for lightweight value objects, `@dataclass(frozen=True)` when you need immutability. Both give you type safety, autocomplete, and clear contracts — unlike dict subclasses.
-
-</v-click>
-
----
+<!-- # Types: TypedDict and dataclasses — aiida-core -->
+<!---->
+<!-- What it looks like when done right: -->
+<!---->
+<!-- ```python -->
+<!-- # aiida/engine/processes/exit_code.py -->
+<!-- class ExitCode(NamedTuple): -->
+<!--     status: int = 0 -->
+<!--     message: Optional[str] = None -->
+<!--     invalidates_cache: bool = False -->
+<!---->
+<!--     def format(self, **kwargs: str) -> 'ExitCode': -->
+<!--         message = self.message.format(**kwargs) -->
+<!--         return ExitCode(self.status, message, self.invalidates_cache) -->
+<!-- ``` -->
+<!---->
+<!-- <v-click> -->
+<!---->
+<!-- ```python -->
+<!-- # aiida/tools/_dumping/utils.py -->
+<!-- @dataclass(frozen=True) -->
+<!-- class DumpTimes: -->
+<!--     current: datetime = field(default_factory=lambda: timezone.now()) -->
+<!--     last: Optional[datetime] = None -->
+<!-- ``` -->
+<!---->
+<!-- `NamedTuple` for lightweight value objects, `@dataclass(frozen=True)` when you need immutability. Both give you type safety, autocomplete, and clear contracts — unlike dict subclasses. -->
+<!---->
+<!-- </v-click> -->
+<!---->
+<!-- --- -->
 
 # Types: Literals and Enums over bare strings
 
@@ -408,9 +394,41 @@ def set_log_level(level: LogLevel) -> None: ...
 
 ---
 
+# Types: Exhaustiveness checking
+
+Let the type checker verify you handled every case
+
+```python
+from enum import Enum
+from typing import assert_never
+
+
+class Shape(Enum):
+    SQUARE = "square"
+    TRIANGLE = "triangle"
+
+
+def area(shape: Shape, size: float) -> float:
+    match shape:
+        case Shape.SQUARE:
+            return size**2
+        case _:
+            assert_never(shape)  # error: Triangle not handled!
+```
+
+<v-click>
+
+When you add a new enum member, **every `match` that forgot it becomes a type error**.
+
+No more "I added a variant but forgot to update the handler" bugs.
+
+</v-click>
+
+---
+
 # Types: Literals and Enums — in aiida-core
 
-Good: Enums used extensively for constrained state
+Enums used extensively for constrained state ✅
 
 ```python
 # aiida/common/links.py
@@ -542,182 +560,116 @@ Same behavior, **1 level of nesting** — each case is self-contained and readab
 
 </v-click>
 
----
+<!-- --- -->
+<!---->
+<!-- # Types: NewType — preventing value mix-ups -->
+<!---->
+<!-- Semantically different values deserve different types -->
+<!---->
+<!-- ```python -->
+<!-- from typing import NewType -->
+<!---->
+<!-- UserId = NewType("UserId", int) -->
+<!-- OrderId = NewType("OrderId", int) -->
+<!---->
+<!---->
+<!-- def get_order(order_id: OrderId) -> Order: ... -->
+<!---->
+<!---->
+<!-- user_id = UserId(42) -->
+<!-- get_order(user_id)  # error: UserId is not compatible with OrderId -->
+<!-- ``` -->
+<!---->
+<!-- <v-click> -->
+<!---->
+<!-- - **Zero runtime cost** — `NewType` is erased at runtime -->
+<!-- - Prevents an entire class of "wrong ID" bugs -->
+<!---->
+<!-- </v-click> -->
+<!---->
+<!-- --- -->
+<!---->
+<!-- # Types: `@final` and `Final` — locking things down -->
+<!---->
+<!-- Prevent accidental overrides and mutations -->
+<!---->
+<!-- ```python -->
+<!-- from typing import final, Final -->
+<!---->
+<!-- MAX_RETRIES: Final = 3 -->
+<!-- MAX_RETRIES = 5  # error: cannot assign to Final variable -->
+<!-- ``` -->
+<!---->
+<!-- <v-click> -->
+<!---->
+<!-- ```python -->
+<!-- from typing import final -->
+<!---->
+<!---->
+<!-- class BaseProcessor: -->
+<!--     @final -->
+<!--     def validate(self, data: bytes) -> bool: -->
+<!--         """Critical validation — subclasses must not override.""" -->
+<!--         return len(data) > 0 and data[0:4] == b"MAGIC" -->
+<!---->
+<!-- class CustomProcessor(BaseProcessor): -->
+<!--     def validate(self, data: bytes) -> bool:  # error: cannot override final -->
+<!--         return True  # oops — security bypass prevented -->
+<!-- ``` -->
+<!---->
+<!-- </v-click> -->
+<!---->
+<!-- <v-click> -->
+<!---->
+<!-- - `Final` for constants — prevents reassignment -->
+<!-- - `@final` on methods — prevents override in subclasses -->
+<!-- - `@final` on classes — prevents subclassing entirely -->
+<!-- - Communicates **intent**: "this is not meant to be extended" -->
+<!---->
+<!-- </v-click> -->
+<!---->
+<!-- --- -->
+<!---->
+<!-- # Types: `@final` and `Final` — in aiida-core -->
+<!---->
+<!-- `@final` prevents subclassing config singletons ✅ -->
+<!---->
+<!-- ```python -->
+<!-- # aiida/manage/configuration/settings.py -->
+<!-- from typing import final -->
+<!---->
+<!-- @final -->
+<!-- class AiiDAConfigDir: -->
+<!--     """Singleton for setting and getting the path to configuration directory.""" -->
+<!--     ... -->
+<!---->
+<!-- @final -->
+<!-- class AiiDAConfigPathResolver: -->
+<!--     """For resolving configuration directory, daemon dir, daemon log dir.""" -->
+<!--     ... -->
+<!-- ``` -->
+<!---->
+<!-- <v-click> -->
+<!---->
+<!-- 9 constants in the same file lack `Final` ❌ -->
+<!---->
+<!-- ```python -->
+<!-- # aiida/manage/configuration/settings.py -->
+<!-- DEFAULT_UMASK = 0o0077                       # should be Final -->
+<!-- DEFAULT_AIIDA_PATH_VARIABLE = 'AIIDA_PATH'   # should be Final -->
+<!-- DEFAULT_CONFIG_DIR_NAME = '.aiida'            # should be Final -->
+<!-- DEFAULT_CONFIG_FILE_NAME = 'config.json'      # should be Final -->
+<!-- DEFAULT_CONFIG_INDENT_SIZE = 4                # should be Final -->
+<!-- # ... 4 more -->
+<!-- ``` -->
+<!---->
+<!-- Nothing prevents `settings.DEFAULT_UMASK = 0o0000` — a subtle security issue that `Final` would catch. -->
+<!---->
+<!-- </v-click> -->
+<!---->
+<!-- --- -->
 
-# Types: Exhaustiveness checking
-
-Let the type checker verify you handled every case
-
-```python
-from enum import Enum
-from typing import assert_never
-
-
-class Shape(Enum):
-    SQUARE = "square"
-    TRIANGLE = "triangle"
-
-
-def area(shape: Shape, size: float) -> float:
-    match shape:
-        case Shape.SQUARE:
-            return size**2
-        case _:
-            assert_never(shape)  # error: Triangle not handled!
-```
-
-<v-click>
-
-When you add a new enum member, **every `match` that forgot it becomes a type error**.
-
-No more "I added a variant but forgot to update the handler" bugs.
-
-</v-click>
-
----
-
-# Types: NewType — preventing value mix-ups
-
-Semantically different values deserve different types
-
-```python
-from typing import NewType
-
-UserId = NewType("UserId", int)
-OrderId = NewType("OrderId", int)
-
-
-def get_order(order_id: OrderId) -> Order: ...
-
-
-user_id = UserId(42)
-get_order(user_id)  # error: UserId is not compatible with OrderId
-```
-
-<v-click>
-
-- **Zero runtime cost** — `NewType` is erased at runtime
-- Prevents an entire class of "wrong ID" bugs
-
-</v-click>
-
----
-
-# Types: NewType — in aiida-core
-
-Bad: `NewType` is not used anywhere in aiida-core
-
-Node PKs, UUIDs, job IDs, and group PKs are all plain `int` or `str`:
-
-```python
-# Nothing stops you from passing a group PK where a node PK is expected
-def load_node(pk: int) -> Node: ...
-def load_group(pk: int) -> Group: ...
-
-node = load_node(group.pk)  # no error — but wrong entity!
-```
-
-<v-click>
-
-With `NewType`, this class of bugs becomes impossible:
-
-```python
-NodePk = NewType("NodePk", int)
-GroupPk = NewType("GroupPk", int)
-
-def load_node(pk: NodePk) -> Node: ...
-def load_group(pk: GroupPk) -> Group: ...
-
-node = load_node(group.pk)  # error: GroupPk is not NodePk
-```
-
-Zero runtime cost, but prevents an entire category of "wrong ID" bugs.
-
-</v-click>
-
----
-
-# Types: `@final` and `Final` — locking things down
-
-Prevent accidental overrides and mutations
-
-```python
-from typing import final, Final
-
-MAX_RETRIES: Final = 3
-MAX_RETRIES = 5  # error: cannot assign to Final variable
-```
-
-<v-click>
-
-```python
-from typing import final
-
-
-class BaseProcessor:
-    @final
-    def validate(self, data: bytes) -> bool:
-        """Critical validation — subclasses must not override."""
-        return len(data) > 0 and data[0:4] == b"MAGIC"
-
-class CustomProcessor(BaseProcessor):
-    def validate(self, data: bytes) -> bool:  # error: cannot override final
-        return True  # oops — security bypass prevented
-```
-
-</v-click>
-
-<v-click>
-
-- `Final` for constants — prevents reassignment
-- `@final` on methods — prevents override in subclasses
-- `@final` on classes — prevents subclassing entirely
-- Communicates **intent**: "this is not meant to be extended"
-
-</v-click>
-
----
-
-# Types: `@final` and `Final` — in aiida-core
-
-Good: `@final` prevents subclassing config singletons
-
-```python
-# aiida/manage/configuration/settings.py
-from typing import final
-
-@final
-class AiiDAConfigDir:
-    """Singleton for setting and getting the path to configuration directory."""
-    ...
-
-@final
-class AiiDAConfigPathResolver:
-    """For resolving configuration directory, daemon dir, daemon log dir."""
-    ...
-```
-
-<v-click>
-
-Bad: 9 constants in the same file lack `Final`
-
-```python
-# aiida/manage/configuration/settings.py
-DEFAULT_UMASK = 0o0077                       # should be Final
-DEFAULT_AIIDA_PATH_VARIABLE = 'AIIDA_PATH'   # should be Final
-DEFAULT_CONFIG_DIR_NAME = '.aiida'            # should be Final
-DEFAULT_CONFIG_FILE_NAME = 'config.json'      # should be Final
-DEFAULT_CONFIG_INDENT_SIZE = 4                # should be Final
-# ... 4 more
-```
-
-Nothing prevents `settings.DEFAULT_UMASK = 0o0000` — a subtle security issue that `Final` would catch.
-
-</v-click>
-
----
-
-# Types: `TypeAlias` — readable names for complex types
+# Types: `TypeAlias` — name your complex types
 
 Tame your type annotations
 
@@ -749,7 +701,6 @@ def handle(callback: Handler, middlewares: list[Middleware]) -> None: ...
 
 - Aliases are **documentation** — they name a concept, not just a shape
 - Reusable across your codebase — change the definition in one place
-- Especially valuable for callback signatures and nested generics
 
 </v-click>
 
@@ -757,7 +708,7 @@ def handle(callback: Handler, middlewares: list[Middleware]) -> None: ...
 
 # Types: `TypeAlias` — in aiida-core
 
-Good: graph traversal module uses aliases for complex types
+graph traversal module uses aliases for complex types ✅
 
 ```python
 # aiida/tools/graph/age_entities.py
@@ -771,7 +722,7 @@ _BasketKeys: TypeAlias = Literal['nodes', 'groups', 'nodes_nodes', 'groups_nodes
 
 <v-click>
 
-Bad: `CalcJobNode` repeats the same complex type 5 times
+`CalcJobNode` repeats the same complex type 5 times ❌
 
 ```python
 # aiida/orm/nodes/process/calculation/calcjob.py
@@ -819,7 +770,6 @@ Any object with a `.read()` method satisfies `Readable` — **no inheritance req
 - Enables **dependency inversion** — depend on abstractions, not concretions
 - Makes code **testable** — pass a fake that matches the protocol
 - Matches Python's duck-typing philosophy, but **checked statically**
-- Similar to Go interfaces or Rust traits
 
 </v-click>
 
@@ -827,7 +777,7 @@ Any object with a `.read()` method satisfies `Readable` — **no inheritance req
 
 # Types: Protocols — in aiida-core
 
-Good: `ProcessFunctionType` Protocol defines the full decorated function contract
+`ProcessFunctionType` Protocol defines the full decorated function contract ✅
 
 ```python
 # aiida/engine/processes/functions.py
@@ -842,7 +792,7 @@ class ProcessFunctionType(Protocol, Generic[P, R_co, N]):
 
 <v-click>
 
-Good: `NodeIterator` Protocol for group iteration
+`NodeIterator` Protocol for group iteration <span class="opacity-50">✅</span>
 
 ```python
 # aiida/orm/implementation/groups.py
@@ -853,7 +803,7 @@ class NodeIterator(Protocol):
     def __len__(self) -> int: ...
 ```
 
-Both define structural contracts — any object matching the shape satisfies the Protocol, no inheritance needed.
+Both define structural contracts — any object matching the shape satisfies the Protocol, **no inheritance needed**.
 
 </v-click>
 
@@ -863,20 +813,24 @@ Both define structural contracts — any object matching the shape satisfies the
 
 Don't lose type precision through transformations
 
+<div class="grid grid-cols-2 gap-4">
+<div>
+
 ```python
-# Without generics — accepts any list, but loses the element type
+# Without generics — loses the element type
 def first(items: list[Any]) -> Any:
     return items[0]
 
 
 val = first([1, 2, 3])  # val: Any
-val.upper()  # no error — but crashes at runtime!
+val.upper()  # no error — crashes at runtime!
 ```
 
-<v-click>
+</div>
+<div>
 
 ```python
-# With generics — return type tracks the input element type
+# With generics — return type tracks input
 from typing import TypeVar
 
 T = TypeVar("T")
@@ -887,54 +841,38 @@ def first(items: list[T]) -> T:
 
 
 val = first([1, 2, 3])  # val: int
-val.upper()  # error: "int" has no attribute "upper"
+val.upper()  # error: int has no .upper()
 ```
 
-</v-click>
+</div>
+</div>
 
 <v-click>
 
-Generics keep the **type checker informed** across function boundaries. Especially important for container types, decorators, and utility functions.
+Generics keep the **type checker informed** across function boundaries.
 
 </v-click>
 
 ---
 
-# Types: Generics — in aiida-core
+<!-- # Types: Generics — in aiida-core -->
+<!---->
+<!-- full generic entity hierarchy preserves types across layers ✅ -->
+<!---->
+<!-- ```python -->
+<!-- # aiida/orm/implementation/entities.py -->
+<!-- EntityType = TypeVar('EntityType', bound='BackendEntity') -->
+<!---->
+<!-- class BackendCollection(Generic[EntityType]): -->
+<!--     ENTITY_CLASS: ClassVar[Type[EntityType]] -->
+<!---->
+<!--     def create(self, **kwargs: Any) -> EntityType:  # precise return type -->
+<!--         return self.ENTITY_CLASS(backend=self._backend, **kwargs) -->
+<!-- ``` -->
+<!---->
+<!-- --- -->
 
-Good: full generic entity hierarchy preserves types across layers
-
-```python
-# aiida/orm/implementation/entities.py
-EntityType = TypeVar('EntityType', bound='BackendEntity')
-
-class BackendCollection(Generic[EntityType]):
-    ENTITY_CLASS: ClassVar[Type[EntityType]]
-
-    def create(self, **kwargs: Any) -> EntityType:  # precise return type
-        return self.ENTITY_CLASS(backend=self._backend, **kwargs)
-```
-
-<v-click>
-
-Bad: `QueryBuilder` loses all type info through the query pipeline
-
-```python
-# aiida/orm/querybuilder.py
-def all(self, ...) -> list[list[Any]]:  # always Any
-    ...
-
-# Caller must cast:
-nodes: list[Node] = qb.all(flat=True)  # type: ignore
-```
-
-The entities are well-typed at the ORM layer, but as soon as they go through `QueryBuilder`, everything becomes `Any`. A generic `QueryBuilder[T]` could preserve the projected types.
-
-</v-click>
-
----
-
-# Types: `@overload` — precise return types per call signature
+# Types: `@overload` — narrow return types
 
 Tell the type checker *exactly* what comes back
 
@@ -973,30 +911,27 @@ result = parse("hello", as_json=False)  # type: str
 
 # Types: `@overload` — in aiida-core
 
-Good: `QueryBuilder.first()` uses `@overload` to distinguish flat vs nested returns
+`QueryBuilder.first()` and `serialize()` both use `@overload` ✅
 
 ```python
-# aiida/orm/querybuilder.py
+# aiida/orm/querybuilder.py — flat flag changes return shape
 @overload
 def first(self, flat: Literal[False] = False) -> list[Any] | None: ...
-
 @overload
 def first(self, flat: Literal[True]) -> Any | None: ...
-
-def first(self, flat: bool = False) -> list[Any] | Any | None:
-    ...
+def first(self, flat: bool = False) -> list[Any] | Any | None: ...
 ```
 
 <v-click>
 
-Bad: `QueryBuilder.all()` still returns `list[list[Any]]` — generic type info is lost through the query pipeline. The element types depend on what was projected, but the type system can't express that.
-
 ```python
-def all(self, ..., flat: bool = False) -> list[list[Any]] | list[Any]:
-    ...  # caller always gets Any — must cast manually
+# aiida/orm/utils/serialize.py — encoding flag changes return type
+@overload
+def serialize(data: Any, encoding: None = None) -> str: ...
+@overload
+def serialize(data: Any, encoding: str) -> bytes: ...
+def serialize(data: Any, encoding: str | None = None) -> str | bytes: ...
 ```
-
-The `@overload` on `flat` helps, but the inner `Any` means the caller never knows the actual column types.
 
 </v-click>
 
@@ -1038,9 +973,12 @@ The `@overload` on `flat` helps, but the inner `Any` means the caller never know
 <!---->
 <!-- --- -->
 
-# Types: `@singledispatch` — dispatch based on input types
+# Types: `@singledispatch` — type-based dispatch
 
 Runtime polymorphism, checked by types
+
+<div class="grid grid-cols-2 gap-4">
+<div>
 
 ```python
 from functools import singledispatch
@@ -1048,19 +986,28 @@ from functools import singledispatch
 @singledispatch
 def serialize(value: object) -> str:
     raise TypeError(f"Cannot serialize {type(value)}")
+```
 
+</div>
+<div>
+
+```python
 @serialize.register
 def _(value: int) -> str:
     return str(value)
 
 @serialize.register
 def _(value: list) -> str:
-    return "[" + ", ".join(serialize(v) for v in value) + "]"
+    items = ", ".join(serialize(v) for v in value)
+    return f"[{items}]"
 
 @serialize.register
 def _(value: datetime) -> str:
     return value.isoformat()
 ```
+
+</div>
+</div>
 
 <v-click>
 
@@ -1076,7 +1023,7 @@ def _(value: datetime) -> str:
 
 # Types: `@singledispatch` — in aiida-core
 
-Good: `@singledispatch` used to convert backend entities to ORM objects
+`@singledispatch` used to convert backend entities to ORM objects ✅
 
 ```python
 # aiida/orm/convert.py
@@ -1091,7 +1038,7 @@ def _(backend_entity):
 
 <v-click>
 
-Bad: isinstance chains that should use singledispatch
+isinstance chains that should use singledispatch ❌
 
 ```python
 # aiida/tools/dbimporters/plugins/oqmd.py
@@ -1108,166 +1055,86 @@ A `@singledispatch` on the value type would be cleaner and extensible — new ty
 
 ---
 
-<!-- # Types: `TypeGuard` and `TypeIs` — custom type narrowing -->
-<!---->
-<!-- Teach the type checker about your validation logic -->
-<!---->
-<!-- ```python -->
-<!-- from typing import TypeIs -->
-<!---->
-<!---->
-<!-- def is_valid_user(value: object) -> TypeIs[User]: -->
-<!--     return isinstance(value, dict) and "name" in value and "email" in value -->
-<!---->
-<!---->
-<!-- def handle(data: object) -> None: -->
-<!--     if is_valid_user(data): -->
-<!--         print(data.name)  # type checker knows: data is User -->
-<!--     else: -->
-<!--         print("invalid")  # data is still object -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- - `TypeGuard[T]` (3.10+) — narrows only in the `if` branch -->
-<!-- - `TypeIs[T]` (3.13+) — narrows in **both** branches (more precise) -->
-<!-- - Bridges the gap between runtime validation and static types -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- --- -->
-
-# Types: Builder pattern with `Self` — typed fluent APIs
-
-Method chaining with correct types
-
-```python
-from typing import Self
-from dataclasses import dataclass, field
-
-
-@dataclass
-class Query:
-    _table: str = ""
-    _columns: list[str] = field(default_factory=list)
-    _conditions: list[str] = field(default_factory=list)
-    _limit: int | None = None
-
-    def select(self, *columns: str) -> Self:
-        self._columns = list(columns)
-        return self
-
-    def where(self, condition: str) -> Self:
-        self._conditions.append(condition)
-        return self
-
-    def limit(self, n: int) -> Self:
-        self._limit = n
-        return self
-```
-
-<v-click>
-
-```python
-query = Query(_table="users").select("name", "email").where("age > 18").limit(10)
-```
-
-`Self` ensures subclasses return **their own type**, not the parent.
-
-</v-click>
-
----
-
-# Types: `ParamSpec` — typed decorators that preserve signatures
+# Types: `ParamSpec` — preserve decorator signatures
 
 Don't let decorators erase your function types
 
 ```python
 from typing import ParamSpec, TypeVar, Callable
-import functools
 
 P = ParamSpec("P")
 R = TypeVar("R")
 
 
-def retry(times: int) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    def decorator(func: Callable[P, R]) -> Callable[P, R]:
-        @functools.wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            for _ in range(times):
-                try:
-                    return func(*args, **kwargs)
-                except Exception:
-                    pass
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
+def log(func: Callable[P, R]) -> Callable[P, R]:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        print(f"calling {func.__name__}")
+        return func(*args, **kwargs)
+    return wrapper
 ```
 
 <v-click>
 
 ```python
-@retry(3)
+@log
 def fetch(url: str, timeout: float = 10.0) -> bytes: ...
 
-
-fetch(42)  # error: int is not str — signature preserved!
+fetch(42)        # error: int is not str — signature preserved!
+fetch("https://example.com", timeout="slow")  # error: str is not float
 ```
 
 </v-click>
 
 ---
 
-# Types: `ParamSpec` — in aiida-core
+<!-- # Types: `ParamSpec` — in aiida-core -->
+<!---->
+<!-- `@calcfunction` preserves signatures via `ParamSpec` + Protocol ✅ -->
+<!---->
+<!-- ```python -->
+<!-- # aiida/engine/processes/functions.py -->
+<!-- P = ParamSpec('P') -->
+<!-- R_co = TypeVar('R_co', covariant=True) -->
+<!---->
+<!-- class ProcessFunctionType(Protocol, Generic[P, R_co, N]): -->
+<!--     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R_co: ... -->
+<!--     def run_get_node(self, *args: P.args, **kwargs: P.kwargs) -> tuple[...]: ... -->
+<!--     process_class: Type[Process] -->
+<!-- ``` -->
+<!---->
+<!-- <v-click> -->
+<!---->
+<!-- the internal decorator erases types with `*args, **kwargs` ❌ -->
+<!---->
+<!-- ```python -->
+<!-- # Same file, the actual decorator implementation -->
+<!-- @functools.wraps(function) -->
+<!-- def decorated_function(*args, **kwargs):  # signature erased! -->
+<!--     result, _ = run_get_node(*args, **kwargs) -->
+<!--     return result -->
+<!---->
+<!-- decorated_function.run = decorated_function  # type: ignore[attr-defined] -->
+<!-- decorated_function.run_get_pk = run_get_pk   # type: ignore[attr-defined] -->
+<!-- # ... 6 more type: ignore[attr-defined] lines -->
+<!-- ``` -->
+<!---->
+<!-- The `ProcessFunctionType` Protocol patches over this at the type level — but the runtime decorator still erases signatures. -->
+<!---->
+<!-- </v-click> -->
+<!---->
+<!-- --- -->
+<!---->
 
-Good: `@calcfunction` preserves signatures via `ParamSpec` + Protocol
+# Types: Variance
 
-```python
-# aiida/engine/processes/functions.py
-P = ParamSpec('P')
-R_co = TypeVar('R_co', covariant=True)
+Why `list[Dog]` is not `list[Animal]` — and when that's the right call
 
-class ProcessFunctionType(Protocol, Generic[P, R_co, N]):
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R_co: ...
-    def run_get_node(self, *args: P.args, **kwargs: P.kwargs) -> tuple[...]: ...
-    process_class: Type[Process]
-```
-
-<v-click>
-
-Bad: the internal decorator erases types with `*args, **kwargs`
-
-```python
-# Same file, the actual decorator implementation
-@functools.wraps(function)
-def decorated_function(*args, **kwargs):  # signature erased!
-    result, _ = run_get_node(*args, **kwargs)
-    return result
-
-decorated_function.run = decorated_function  # type: ignore[attr-defined]
-decorated_function.run_get_pk = run_get_pk   # type: ignore[attr-defined]
-# ... 6 more type: ignore[attr-defined] lines
-```
-
-The `ProcessFunctionType` Protocol patches over this at the type level — but the runtime decorator still erases signatures.
-
-</v-click>
-
----
-
-# Types: Variance — why `list[Dog]` is not `list[Animal]`
-
-A common source of type errors and confusion
+<div class="grid grid-cols-2 gap-4">
+<div>
 
 ```python
 class Animal: ...
-
-
 class Dog(Animal): ...
-
-
 class Cat(Animal): ...
 
 
@@ -1276,33 +1143,47 @@ def add_cat(animals: list[Animal]) -> None:
 
 
 dogs: list[Dog] = [Dog(), Dog()]
-add_cat(dogs)  # mypy error: list[Dog] is not list[Animal]
-# If allowed: dogs would now contain a Cat — type violation
+add_cat(dogs)  # error: list[Dog] is not list[Animal]
+# if allowed: dogs would contain a Cat!
 ```
+
+</div>
+<div>
 
 <v-click>
 
-- `list` is **invariant** — `list[Dog]` is not a subtype of `list[Animal]`
-- `Sequence` (read-only) is **covariant** — `Sequence[Dog]` *is* `Sequence[Animal]`
-- Mutable containers must be invariant to prevent inserting wrong types
+- `list` is **invariant**: because it's mutable, the type checker must be strict — accepting `list[Dog]` where `list[Animal]` is expected would allow inserting a `Cat`
+- `Sequence` is **covariant**: it's read-only (no `append`, no `__setitem__`), so no wrong type can ever be inserted — subtyping is safe
+- The rule: **more capability → stricter variance**
 
 </v-click>
+
+</div>
+</div>
+
+---
+
+# Types: Variance — prefer broad inputs, narrow outputs
 
 <v-click>
 
 ```python
 from collections.abc import Sequence
 
-
-def count_legs(animals: Sequence[Animal]) -> int:  # accepts Sequence[Dog]
+# accepts Sequence[Dog] ✅ — read-only, so covariance is safe
+def count_legs(animals: Sequence[Animal]) -> int:
     return sum(4 for _ in animals)
 ```
 
-This is **Postel's Law** (the Robustness Principle, from TCP/RFC 761):
+</v-click>
+
+<v-click>
+
+This is **Postel's Law** (Robustness Principle, RFC 761):
 
 > "Be liberal in what you accept, be conservative in what you send."
 
-Accept broad input types (`Sequence`, `Mapping`), return narrow/specific types (`list`, `dict`).
+Accept broad input types (`Sequence`, `Mapping`), return narrow/specific types (`list`, `dict`). This maps directly to variance: covariant (read-only) inputs, invariant (mutable) outputs.
 
 </v-click>
 
@@ -1343,38 +1224,31 @@ Every level violates the [Liskov Substitution Principle](https://en.wikipedia.or
 
 # Types: `type: ignore` — a taxonomy from aiida-core
 
-What 366 ignores across a codebase tell you
+(Still) 343 `type: ignore` across the codebase 
 
 | Category | Count | What it reveals |
 |---|---|---|
-| `attr-defined` | 646 | Heavy dynamic attribute access (ORM, mixins) |
-| `arg-type` | 561 | API polymorphism that types can't express |
-| `assignment` | 487 | Variables change type mid-function |
-| `override` | 368 | Inheritance hierarchy violates LSP |
-| `union-attr` | 229 | Missing type narrowing |
-| `return-value` | 198 | Return type doesn't match annotation |
+| `attr-defined` | 89 | Heavy dynamic attribute access (ORM, mixins) |
+| `arg-type` | 42 | API polymorphism that types can't express |
+| `union-attr` | 30 | Missing type narrowing |
+| `return-value` | 27 | Return type doesn't match annotation |
+| `assignment` | 24 | Variables change type mid-function |
+| `override` | 18 | Inheritance hierarchy violates LSP |
 
-<v-click>
+<!-- --- -->
 
-**Real examples from aiida-core:**
-
-```python
-# Dynamic ORM attribute access — fundamentally untypeable
-node.base.repository.put_object(...)  # type: ignore[attr-defined]
-
-# SQLAlchemy relationships assigned at runtime
-DbNode.dbcomputer = sa_orm.relationship(...)  # type: ignore[attr-defined]
-
-# dict interface violation — documented as a TODO
-# TODO: We're in violation of the `dict` interface here
-def __dir__(self) -> list[Any]:  # type: ignore[override]
-```
-
-</v-click>
-
-<v-click>
+<!-- **Real examples from aiida-core:** -->
+<!---->
+<!-- ```python -->
+<!-- # Dynamic ORM attribute access — fundamentally untypeable -->
+<!-- node.base.repository.put_object(...)  # type: ignore[attr-defined] -->
+<!---->
+<!-- # SQLAlchemy relationships assigned at runtime -->
+<!-- DbNode.dbcomputer = sa_orm.relationship(...)  # type: ignore[attr-defined] -->
+<!---->
+<!-- # dict interface violation — documented as a TODO -->
+<!-- # TODO: We're in violation of the `dict` interface here -->
+<!-- def __dir__(self) -> list[Any]:  # type: ignore[override] -->
+<!-- ``` -->
 
 Each `type: ignore` is a **decision**: fix the design, or document the debt.
-
-</v-click>
-

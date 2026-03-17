@@ -6,7 +6,6 @@ title: Why API and types matter
 class: text-center
 transition: slide-left
 comark: true
-duration: 35min
 ---
 
 # Why API and types matter
@@ -28,8 +27,28 @@ Your library's API is the **surface area** that every user touches
 - Types are the **machine-checkable** part of that contract
 
 ---
+layout: center
+class: text-center
+---
+
+# Part 1: API Design
+
+What makes an API good or bad — and how to tell the difference.
+
+---
 src: ./pages/api.md
 ---
+
+---
+layout: center
+class: text-center
+---
+
+# Part 2: Types
+
+A good API tells users *what* to pass and *what* to expect back.
+
+**Types make that contract explicit and machine-checkable — if you actually run the type checker.**
 
 ---
 src: ./pages/types.md
@@ -38,3 +57,4 @@ src: ./pages/types.md
 ---
 src: ./pages/footer.md
 ---
+

@@ -1,37 +1,37 @@
 # Putting it all together
 
-Types and API design reinforce each other
+API design principles
 
 | Principle | Benefit |
 |---|---|
-| Typed signatures | Self-documenting, machine-checkable contracts |
-| dataclass / TypedDict | Structured data with typo detection |
-| Protocols | Flexible abstractions, testability |
-| NewType | Prevent value mix-ups at zero cost |
-| Enums / Literals | Constrained inputs, exhaustiveness |
-| Generics | Preserve type info across boundaries |
-| @overload | Precise return types per call signature |
-| @singledispatch | Extensible runtime dispatch by type |
-| TypeGuard / TypeIs | Custom narrowing for validation |
-| ParamSpec | Decorators that preserve signatures |
-| Final / @final | Lock down constants and methods |
-| Variance | Read-only → covariant, mutable → invariant |
+| Flat imports | File structure is an implementation detail |
+| Naming | Short as possible, clear as necessary |
+| Avoid global state | Use instances, `ContextVar` for thread safety |
+| Pit of success | Safe defaults, explicit opt-out for danger |
+| Progressive disclosure | Simple things simple, complex things possible |
+| Immutability | Fewer surprises, thread safety |
+| Context managers | Automatic resource cleanup |
+| Errors | Custom exception hierarchy, never bare `Exception` |
 
 ---
 
 # Putting it all together (cont.)
 
-API design principles
+Type system tools
 
 | Principle | Benefit |
 |---|---|
-| Pit of success | Safe defaults, explicit opt-out for danger |
-| Progressive disclosure | Simple things simple, complex things possible |
-| Immutability | Fewer surprises, thread safety |
-| Builder / Self | Typed fluent method chaining |
-| Context managers | Automatic resource cleanup |
-| Async mirrors | Parallel sync/async with distinct types |
-| Deprecation | Guided migration with warnings + overloads |
+| Typed signatures | Self-documenting, machine-checkable contracts |
+| dataclass / TypedDict | Structured data with typo detection |
+| Enums / Literals | Constrained inputs, exhaustiveness checking |
+| NewType | Prevent value mix-ups at zero cost |
+| Protocols | Flexible abstractions, testability |
+| Generics | Preserve type info across boundaries |
+| @overload | Precise return types per call signature |
+| @singledispatch | Extensible runtime dispatch by type |
+| ParamSpec | Decorators that preserve signatures |
+| Final / @final | Lock down constants and methods |
+| Variance | Read-only → covariant, mutable → invariant |
 
 <v-click>
 
@@ -52,7 +52,20 @@ class: text-center
 
 Well-typed code is well-designed code.
 
-**Invest in your API surface. Your users — and your future self — will thank you.**
+</div>
+
+---
+layout: center
+class: text-center
+---
+
+# Conclusion
+
+<div class="text-2xl mt-4 opacity-80">
+
+Rewrite it in Rust
+
+🦀
 
 </div>
 
