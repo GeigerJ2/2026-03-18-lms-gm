@@ -439,6 +439,111 @@ Impossible to pass `"uploding"` by accident — the type checker catches it. And
 
 ---
 
+# Types: Literals and Enums — in aiida-core (cont.)
+
+Same problem, two approaches ([#7069](https://github.com/aiidateam/aiida-core/pull/7069) vs [#7116](https://github.com/aiidateam/aiida-core/pull/7116)): control what happens on unhandled process failure
+
+<div class="grid grid-cols-2 gap-4">
+<div>
+
+**Two boolean flags** (PR #7069)
+
+```python
+spec.input('pause_for_unknown_errors',
+           valid_type=orm.Bool,
+           default=lambda: orm.Bool(False))
+spec.input('restart_once_for_unknown_errors',
+           valid_type=orm.Bool,
+           default=lambda: orm.Bool(True))
+```
+
+</div>
+<div>
+
+**One string input** (PR #7116)
+
+```python
+spec.input('on_unhandled_failure',
+           valid_type=orm.Str,
+           required=False,
+           validator=validate_on_unhandled_failure)
+# options: 'abort', 'pause',
+#   'restart_once', 'restart_and_pause'
+```
+
+</div>
+</div>
+
+---
+
+# Types: Literals and Enums — in aiida-core (cont.)
+
+Two booleans → deeply nested dispatch
+
+```python
+if node.is_failed and not last_report:
+    if self.inputs.restart_once_for_unknown_errors.value:       # restart enabled?
+        if self.ctx.unhandled_failure:                           #   second failure?
+            if self.inputs.pause_for_unknown_errors.value:      #     pause enabled?
+                self.ctx.paused_by_handler = True
+                self.ctx.unhandled_failure = False
+                self.pause()
+                return None
+            else:                                               #     pause disabled
+                return self.exit_codes.ERROR_SECOND_CONSECUTIVE_UNHANDLED_FAILURE
+        self.ctx.unhandled_failure = True                       #   first failure
+    else:                                                       # restart disabled
+        if self.inputs.pause_for_unknown_errors.value:          #   pause enabled?
+            self.ctx.paused_by_handler = True
+            self.pause()
+        else:                                                   #   pause disabled
+            return self.exit_codes.ERROR_UNHANDLED_FAILURE
+```
+
+<v-click>
+
+4 combinations of 2 booleans → **3 levels of nesting**, hard to follow
+
+</v-click>
+
+---
+
+# Types: Literals and Enums — in aiida-core (cont.)
+
+One string → flat dispatch
+
+```python
+if node.is_failed and not last_report:
+    action = self.inputs.get('on_unhandled_failure', None)
+    action = action.value if action is not None else 'abort'
+
+    if action == 'abort':
+        return self.exit_codes.ERROR_UNHANDLED_FAILURE
+    elif action == 'pause':
+        self.pause(f"Paused for inspection, see: 'verdi process report {self.node.pk}'")
+        return None
+    elif action == 'restart_once':
+        if self.ctx.unhandled_failure:
+            return self.exit_codes.ERROR_UNHANDLED_FAILURE
+        self.ctx.unhandled_failure = True
+        return None
+    elif action == 'restart_and_pause':
+        if self.ctx.unhandled_failure:
+            self.ctx.unhandled_failure = False
+            self.pause(f"Paused for inspection, see: 'verdi process report {self.node.pk}'")
+            return None
+        self.ctx.unhandled_failure = True
+        return None
+```
+
+<v-click>
+
+Same behavior, **1 level of nesting** — each case is self-contained and readable.
+
+</v-click>
+
+---
+
 # Types: Exhaustiveness checking
 
 Let the type checker verify you handled every case
@@ -716,8 +821,6 @@ Any object with a `.read()` method satisfies `Readable` — **no inheritance req
 - Matches Python's duck-typing philosophy, but **checked statically**
 - Similar to Go interfaces or Rust traits
 
-**In aiida-core:** `_EntityMapper(Protocol)` in the query builder — defines the expected ORM model properties structurally, without forcing inheritance.
-
 </v-click>
 
 ---
@@ -793,8 +896,6 @@ val.upper()  # error: "int" has no attribute "upper"
 
 Generics keep the **type checker informed** across function boundaries. Especially important for container types, decorators, and utility functions.
 
-**In aiida-core:** `NodeCollection(Generic[NodeType])` — the collection type preserves which node subclass it contains, so `CalcJobNode.collection.get()` returns `CalcJobNode`, not `Node`.
-
 </v-click>
 
 ---
@@ -865,8 +966,6 @@ result = parse("hello", as_json=False)  # type: str
 - Without `@overload`, the caller always sees `dict | str` and must narrow manually
 - With `@overload`, each call site gets the **precise** return type
 - Useful for functions whose return type depends on a flag or input type
-
-**In aiida-core:** `CalculationFactory(name, load=True)` → `Type[CalcJob]` vs `CalculationFactory(name, load=False)` → `EntryPoint` — return type depends on the `load` flag.
 
 </v-click>
 
