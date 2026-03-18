@@ -28,7 +28,7 @@ print(response.status)
 Could you write this from scratch?
 
 - **3 concepts**: manager, handler, opener
-- **2 absurd names**: `HTTPPasswordMgrWithDefaultRealm`, `HTTPBasicAuthHandler`
+- **2 long class names**: `HTTPPasswordMgrWithDefaultRealm`, `HTTPBasicAuthHandler`
 - A mystery `None` as first argument to `add_password`
 
 </v-click>

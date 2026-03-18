@@ -4,7 +4,7 @@ colorSchema: light
 # background: https://cover.sli.dev
 title: Why API and types matter
 class: text-center
-transition: slide-left
+transition: fade
 comark: true
 ---
 
