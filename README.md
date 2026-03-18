@@ -9,20 +9,39 @@ Slidev presentation for the LMS Seminar, 18 March 2026.
 - `pages/types.md` — type system slides
 - `pages/footer.md` — summary, conclusions, references
 
-## View the presentation
-
-Run the dev server:
+## Run locally (with sources)
 
 ```bash
 bunx slidev
 ```
 
-Opens at http://localhost:3030.
+Opens at http://localhost:3030. Supports hot-reload — edits to the `.md` files update the slides live.
 
-## Exports
+## Pre-built exports
 
 Pre-built exports are in `exports/`:
 
-- `slides-spa.zip` — interactive SPA (unzip, then serve with `python -m http.server --directory dist` and open http://localhost:8000)
-- `slides-export.pdf` — PDF with click steps
-- `slides-export.pptx` — PowerPoint (slides as images)
+- **`slides-spa.zip`** — interactive SPA with animations. Unzip and serve:
+  ```bash
+  cd exports
+  unzip slides-spa.zip
+  python -m http.server --directory dist
+  ```
+  Then open http://localhost:8000.
+
+- **`slides-export.pdf`** — PDF with click steps
+- **`slides-export.pptx`** — PowerPoint (slides as images)
+
+## Rebuild exports
+
+Requires `bun` (or `npm`/`pnpm`).
+
+```bash
+bunx slidev build                                  # SPA → dist/
+bunx slidev export --with-clicks                   # PDF
+bunx slidev export --format pptx --with-clicks     # PPTX
+```
+
+## License
+
+MIT
