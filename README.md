@@ -29,7 +29,7 @@ Pre-built exports are in `exports/`:
   ```
   Then open http://localhost:8000.
 
-- **`slides-export.pdf`** — PDF with click steps
+- **`slides-export.pdf`** — PDF (one page per slide)
 - **`slides-export.pptx`** — PowerPoint (slides as images)
 
 ## Rebuild exports
@@ -38,8 +38,8 @@ Requires `bun` (or `npm`/`pnpm`).
 
 ```bash
 bunx slidev build                                  # SPA → dist/
-bunx slidev export --with-clicks                   # PDF
-bunx slidev export --format pptx --with-clicks     # PPTX
+bunx slidev export                                  # PDF
+bunx slidev export --format pptx                    # PPTX
 ```
 
 ## License
