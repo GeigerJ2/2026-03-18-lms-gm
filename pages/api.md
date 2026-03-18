@@ -21,6 +21,7 @@ print(response.status)
 ```
 
 </div>
+<div class="flex items-start pt-2">
 <div>
 
 <v-click>
@@ -33,6 +34,7 @@ Could you write this from scratch?
 
 </v-click>
 
+</div>
 </div>
 </div>
 

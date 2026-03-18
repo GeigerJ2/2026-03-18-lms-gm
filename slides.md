@@ -16,13 +16,16 @@ LMS Seminar · 18 Mar 2026
 
 ---
 
-# Why should we care?
+# Why should one care?
 
 Your library's API is the **surface area** that every user touches
 
 - A bad API leads to bugs, frustration, and misuse
 - A good API makes the "right thing" easy and the "wrong thing" hard
-- Types are the **machine-checkable** part of that contract
+- **You spend more time reading code than writing it** — API clarity pays off every day
+- Code without types is implicit knowledge that lives in someone's head
+- Types are the **machine-checkable** part of the API contract
+- When a type is hard to write, it's often a signal that the design/API needs work
 
 ---
 
@@ -93,3 +96,7 @@ src: ./pages/types.md
 src: ./pages/footer.md
 ---
 
+<!-- Backup slides — commented out, not shown in main deck -->
+<!-- ---
+src: ./pages/backup.md
+--- -->

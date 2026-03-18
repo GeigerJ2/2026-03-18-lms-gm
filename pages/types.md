@@ -312,38 +312,6 @@ class User:
 
 ---
 
-<!-- # Types: TypedDict and dataclasses — aiida-core -->
-<!---->
-<!-- What it looks like when done right: -->
-<!---->
-<!-- ```python -->
-<!-- # aiida/engine/processes/exit_code.py -->
-<!-- class ExitCode(NamedTuple): -->
-<!--     status: int = 0 -->
-<!--     message: Optional[str] = None -->
-<!--     invalidates_cache: bool = False -->
-<!---->
-<!--     def format(self, **kwargs: str) -> 'ExitCode': -->
-<!--         message = self.message.format(**kwargs) -->
-<!--         return ExitCode(self.status, message, self.invalidates_cache) -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- ```python -->
-<!-- # aiida/tools/_dumping/utils.py -->
-<!-- @dataclass(frozen=True) -->
-<!-- class DumpTimes: -->
-<!--     current: datetime = field(default_factory=lambda: timezone.now()) -->
-<!--     last: Optional[datetime] = None -->
-<!-- ``` -->
-<!---->
-<!-- `NamedTuple` for lightweight value objects, `@dataclass(frozen=True)` when you need immutability. Both give you type safety, autocomplete, and clear contracts — unlike dict subclasses. -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- --- -->
-
 # Types: Literals and Enums over bare strings
 
 Constrain your inputs
@@ -371,9 +339,6 @@ LogLevel = Literal[
 def set_log_level(level: LogLevel) -> None: ...
 
 set_log_level("wraning")  # type error!
-
-
-
 
 ```
 
@@ -729,8 +694,8 @@ count_legs(dogs)  # works!
 
 <v-click>
 
-- **Mutable** container (`list`) → **invariant**: type must match exactly, otherwise you could insert the wrong type
-- **Read-only** container (`Sequence`) → **covariant**: subtypes are safe, you can only read out
+- **`list` is mutable** → **invariant**: if `list[Dog]` were accepted as `list[Animal]`, a function could `append(Cat())` — your `list[Dog]` would secretly contain a `Cat`. The type checker would have lied. So neither is a subtype of the other.
+- **`Sequence` is read-only** → **covariant**: no `append`, no `__setitem__` — nothing wrong can be inserted. Every `Dog` *is* an `Animal`, so every read is safe. `Sequence[Dog]` *is* a `Sequence[Animal]`.
 
 </v-click>
 
@@ -801,33 +766,17 @@ class Cat(Animal[CatFood]):
 
 ---
 
-# Types: `type: ignore` — a taxonomy from aiida-core
+# Types: `type: ignore` in aiida-core `v2.8.0`
 
-(Still) 343 `type: ignore` across the codebase 
+(Still) 367 `type: ignore` across the codebase (343 in `src/`, 24 in tests)
 
-| Category | Count | What it reveals |
+| **Category** | **Count** | **What it reveals** |
 |---|---|---|
-| `attr-defined` | 89 | Heavy dynamic attribute access (ORM, mixins) |
-| `arg-type` | 42 | API polymorphism that types can't express |
-| `union-attr` | 30 | Missing type narrowing |
+| `attr-defined` | 94 | Heavy dynamic attribute access (ORM, mixins) |
+| `arg-type` | 43 | API polymorphism that types can't express |
+| `union-attr` | 31 | Missing type narrowing |
 | `return-value` | 27 | Return type doesn't match annotation |
-| `assignment` | 24 | Variables change type mid-function |
+| `assignment` | 27 | Variables change type mid-function |
 | `override` | 18 | Inheritance hierarchy violates LSP |
-
-<!-- --- -->
-
-<!-- **Real examples from aiida-core:** -->
-<!---->
-<!-- ```python -->
-<!-- # Dynamic ORM attribute access — fundamentally untypeable -->
-<!-- node.base.repository.put_object(...)  # type: ignore[attr-defined] -->
-<!---->
-<!-- # SQLAlchemy relationships assigned at runtime -->
-<!-- DbNode.dbcomputer = sa_orm.relationship(...)  # type: ignore[attr-defined] -->
-<!---->
-<!-- # dict interface violation — documented as a TODO -->
-<!-- # TODO: We're in violation of the `dict` interface here -->
-<!-- def __dir__(self) -> list[Any]:  # type: ignore[override] -->
-<!-- ``` -->
 
 Each `type: ignore` is a **decision**: fix the design, or document the debt.

@@ -9,12 +9,6 @@
 | Progressive disclosure | Simple things simple, complex things possible |
 | Input representation | Right abstraction reduces nesting |
 
-<v-click>
-
-**Types and API design reinforce each other** — types make your API contract explicit, and a well-designed API is easy to type. When a type is hard to write, the design needs work.
-
-</v-click>
-
 ---
 
 # Putting it all together — Type system
@@ -28,12 +22,6 @@
 | Generics | Preserve type info across boundaries |
 | @overload / @singledispatch | Precise dispatch by type |
 | Variance / LSP | Subtyping done right |
-
-<v-click>
-
-**Types and API design reinforce each other** — types make your API contract explicit, and a well-designed API is easy to type. When a type is hard to write, the design needs work.
-
-</v-click>
 
 ---
 layout: center
