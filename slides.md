@@ -10,8 +10,6 @@ comark: true
 
 # Why API and types matter
 
-Building better Python through intentional design
-
 **Julian Geiger**
 
 LMS Seminar · 18 Mar 2026
@@ -27,11 +25,48 @@ Your library's API is the **surface area** that every user touches
 - Types are the **machine-checkable** part of that contract
 
 ---
+
+# Outline
+
+<div class="grid grid-cols-2 gap-8">
+<div>
+
+**API Design**
+
+1. `urllib` vs `requests`
+2. Flat is better than nested
+3. Naming — short as possible, clear as necessary
+4. Minimize mutable state and side effects
+5. The pit of success
+6. Progressive disclosure
+7. Choose the right input representation
+
+</div>
+<div>
+
+**Types**
+
+1. Function signatures are your API contract
+2. `stubgen` — Python's "header files"
+3. Types catch bugs and guide the API
+4. Types reveal code smells
+5. TypedDict and dataclasses over plain dicts
+6. Literals and Enums over bare strings
+7. `TypeAlias` — name your complex types
+8. Protocols and abstract interfaces
+9. Generics — preserving type information
+10. `@overload` and `@singledispatch`
+11. Variance & Postel's Law / LSP
+
+</div>
+</div>
+
+---
 layout: center
 class: text-center
 ---
 
-# Part 1: API Design
+# API Design
 
 What makes an API good or bad — and how to tell the difference.
 
@@ -44,7 +79,7 @@ layout: center
 class: text-center
 ---
 
-# Part 2: Types
+# Types
 
 A good API tells users *what* to pass and *what* to expect back.
 

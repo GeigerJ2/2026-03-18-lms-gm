@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Types: Function signatures are your API contract
 
 The parallel to C header files
@@ -31,20 +35,25 @@ def order(chips: int, fish: int, timeout: float = 10.0) -> Receipt: ...
 
 ---
 
-# Types: `stubgen` — Python's header files
+# Types: `stubgen` — Python's "header files"
 
 Generate `.pyi` stub files that show only the API surface
+
+- `stubgen` (from mypy) or `pyright --createstub` auto-generates them
+
+<v-click>
 
 ```bash
 # Generate stubs for your package
 stubgen -p mypackage -o stubs/
 ```
 
+</v-click>
+
 <v-click>
 
 - `.pyi` files are like C header files — types and signatures, no implementation
-- `stubgen` (from mypy) or `pyright --createstub` auto-generates them
-- Great for reviewing your public API at a glance — **if the stub looks messy, the API is messy**
+- Great for reviewing your public API at a glance
 - Friendlier to LLM context than the full implementation 😉
 
 </v-click>
@@ -53,106 +62,91 @@ stubgen -p mypackage -o stubs/
 
 # Types: `stubgen` — aiida-core example
 
-`stubs/aiida/engine/processes/exit_code.pyi` — generated, nothing hand-written:
+`Waiting` — the state that manages a `CalcJob` while it runs on the remote computer (~280 lines, excerpt):
 
 ```python
-from aiida.common.extendeddicts import AttributeDict
-from typing import NamedTuple
-
-class ExitCode(NamedTuple):
-    status: int = ...
-    message: str | None = ...
-    invalidates_cache: bool = ...
-    def format(self, **kwargs: str) -> ExitCode: ...
-
-class ExitCodesNamespace(AttributeDict):
-    def __call__(self, identifier: int | str) -> ExitCode: ...
+# stubs/aiida/engine/processes/calcjobs/tasks.pyi
+class Waiting(plumpy.process_states.Waiting):
+    def __init__(
+        self, process: CalcJob, done_callback: Callable[..., Any] | None,
+        msg: str | None = None, data: Any | None = None,
+    ) -> None: ...
+    @property
+    def monitors(self) -> CalcJobMonitors | None: ...
+    @property
+    def process(self) -> CalcJob: ...
+    def upload(self) -> Waiting: ...
+    def submit(self) -> Waiting: ...
+    def update(self) -> Waiting: ...
+    def stash(self, monitor_result: CalcJobMonitorResult | None = None) -> Waiting: ...
+    def retrieve(self, monitor_result: CalcJobMonitorResult | None = None) -> Waiting: ...
+    def parse(
+        self, retrieved_temporary_folder: str, exit_code: ExitCode | None = None,
+    ) -> plumpy.process_states.Running: ...
+    def interrupt(self, reason: Any) -> plumpy.futures.Future | None: ...
 ```
 
 <v-click>
 
-The full implementation is ~80 lines. The stub tells you everything a caller needs in 10.
+The stub reveals the lifecycle at a glance: upload → submit → update → retrieve → parse.
 
 </v-click>
 
 ---
 
-# Types: Types catch bugs
+# Types: Types catch bugs and guide the API
 
 Adding types to existing code reveals hidden issues
 
+<div class="grid grid-cols-2 gap-4">
+<div>
+
 ```python
-# Before types — "works fine" (or does it?)
+# Before — "works fine" (or does it?)
 def get_user_name(user_id):
     user = db.find(user_id)
     if user:
         return user.name
-    return None  # <- caller probably doesn't handle this
+    return None  # caller might not handle this
 ```
+
+</div>
+<div>
 
 <v-click>
 
 ```python
-# After adding types — the bug is now visible
-def get_user_name(user_id: int) -> str:  # mypy error  [return-value]
+# After — the issue now becomes obvious
+def get_user_name(user_id: int) -> str:
+    # mypy error: [return-value]
     user = db.find(user_id)
     if user:
         return user.name
-    return None  # None is not compatible with str
+    return None  # None is not str
 ```
+
+</v-click>
+
+</div>
+</div>
+
+<v-click>
+
+The type checker **forces you to decide**: return `str | None`? Or raise on missing users? Either way, the caller now knows what to expect.
 
 </v-click>
 
 <v-click>
 
-The type checker **forces you to decide**: should this return `str | None`? Or should it raise on missing users? Either way, the caller now knows what to expect.
+**In aiida-core:** adding types to the scheduler module revealed wrong return types, `str` assigned where `int` was expected, and silent `None` returns ([#7156](https://github.com/aiidateam/aiida-core/pull/7156) by @danielhollas)
+
+<div class="absolute bottom-4 left-12 text-xs opacity-50">#7156: <i>Add typing to scheduler plugins</i></div>
 
 </v-click>
 
 ---
 
-# Types: Types catch bugs — in aiida-core
-
-Real bugs found by adding types to 5 scheduler plugins ([#7156](https://github.com/aiidateam/aiida-core/pull/7156) by `danielhollas`)
-
-<v-click>
-
-```python
-# 1. Wrong return type — annotation said dict, code returned str
-def _get_detailed_job_info_command(self, job_id: str) -> dict[str, Any]:  # wrong!
-    return f"bjobs -l {escape_for_bash(job_id)}"  # actually returns str
-```
-
-</v-click>
-
-<v-click>
-
-```python
-# 2. Wrong value type — str assigned where int expected
-this_job.num_mpiprocs = str(element_child.data).strip()  # str, not int!
-# Fix:
-this_job.num_mpiprocs = int(str(element_child.data).strip())
-```
-
-</v-click>
-
-<v-click>
-
-```python
-# 3. Silent None return — callers didn't handle it
-def _parse_time_string(self, string: str, fmt: str = "...") -> datetime:
-    if string == "-":
-        return None  # type error! None is not datetime
-
-
-# Fix: raise ValueError instead, handle at call site
-```
-
-</v-click>
-
----
-
-# Types: Types reveal design smells
+# Types: Types reveal code smells
 
 When the return type is too broad, your code needs refactoring
 
@@ -199,15 +193,15 @@ def process_payment(
 
 <v-click>
 
-If you struggle to write the return type, **the function is doing too many things**.
+If you struggle to write the return type, **the API is missing an abstraction**.
 
 </v-click>
 
 ---
 
-# Types: Types reveal design smells — aiida-core
+# Types: Types reveal code smells — aiida-core
 
-Breaking the dict contract: `None` instead of `KeyError` ([#7136](https://github.com/aiidateam/aiida-core/pull/7136))
+Breaking the dict contract: `None` instead of `KeyError` (surfaced in [#7136](https://github.com/aiidateam/aiida-core/pull/7136) by @danielhollas)
 
 <div class="grid grid-cols-2 gap-4">
 <div>
@@ -243,8 +237,8 @@ class JobInfo(DefaultFieldsAttributeDict):
 # field may be None at runtime, but type checker
 # sees int — contradiction:
 if (
-    this_job.allocated_machines is not None
-    and this_job.num_machines is not None
+    this_job.num_machines is not None
+    and this_job.allocated_machines is not None
 ):  # type: ignore[redundant-expr]
     ...
 ```
@@ -253,6 +247,8 @@ if (
 
 </div>
 </div>
+
+<div class="absolute bottom-4 left-12 text-xs opacity-50">#7136: <i>Strict typing for aiida.schedulers module</i></div>
 
 ---
 
@@ -266,9 +262,10 @@ user = {"name": "Alice", "age": 30, "emial": "alice@example.com"}
 #                                    ^^^^^ typo goes unnoticed
 ```
 
+<div class="grid grid-cols-2 gap-4">
+
 <v-click>
 
-<div class="grid grid-cols-2 gap-4">
 <div>
 
 ```python
@@ -287,10 +284,16 @@ user: User = {"name": "Alice", "age": 30, "emial": "..."}
 ```
 
 </div>
+
+</v-click>
+
+<v-click>
+
 <div>
 
 ```python
-# dataclass: type safety + methods + immutability option
+# dataclass — type safety + methods + immutability
+# (also: NamedTuple for lightweight immutable records)
 from dataclasses import dataclass
 
 
@@ -302,15 +305,10 @@ class User:
 ```
 
 </div>
+
+</v-click>
+
 </div>
-
-</v-click>
-
-<v-click>
-
-`NamedTuple` sits between the two: immutable like a frozen dataclass, but also tuple-compatible (unpackable, positionally accessible). Used in aiida-core for `ExitCode`.
-
-</v-click>
 
 ---
 
@@ -350,12 +348,14 @@ class User:
 
 Constrain your inputs
 
+<div class="grid grid-cols-2 gap-4">
+<div>
+
 ```python
 # Fragile — any typo silently passes
 def set_log_level(level: str) -> None: ...
 
-
-set_log_level("wraning")  # no error, silent misbehavior
+set_log_level("wraning")  # silent misbehavior
 ```
 
 <v-click>
@@ -364,23 +364,30 @@ set_log_level("wraning")  # no error, silent misbehavior
 # Better — Literal constrains the values
 from typing import Literal
 
+LogLevel = Literal[
+    "debug", "info", "warning", "error",
+]
 
-def set_log_level(level: Literal["debug", "info", "warning", "error"]) -> None: ...
+def set_log_level(level: LogLevel) -> None: ...
+
+set_log_level("wraning")  # type error!
 
 
-set_log_level("wraning")  # error: not assignable to Literal[...]
+
+
 ```
 
 </v-click>
 
----
+</div>
+<div>
 
-# Types: Literals and Enums over bare strings
+<v-click>
 
 ```python
-# Best for complex cases — Enum with exhaustiveness
+# Best — Enum with exhaustiveness
 from enum import Enum
-
+from typing import assert_never
 
 class LogLevel(Enum):
     DEBUG = "debug"
@@ -388,47 +395,26 @@ class LogLevel(Enum):
     WARNING = "warning"
     ERROR = "error"
 
-
-def set_log_level(level: LogLevel) -> None: ...
-```
-
----
-
-# Types: Exhaustiveness checking
-
-Let the type checker verify you handled every case
-
-```python
-from enum import Enum
-from typing import assert_never
-
-
-class Shape(Enum):
-    SQUARE = "square"
-    TRIANGLE = "triangle"
-
-
-def area(shape: Shape, size: float) -> float:
-    match shape:
-        case Shape.SQUARE:
-            return size**2
+def set_log_level(level: LogLevel) -> None:
+    match level:
+        case LogLevel.DEBUG: ...
         case _:
-            assert_never(shape)  # error: Triangle not handled!
+            assert_never(level)  # error!
 ```
 
-<v-click>
-
-When you add a new enum member, **every `match` that forgot it becomes a type error**.
-
-No more "I added a variant but forgot to update the handler" bugs.
+Adding a new member → every `match` that forgot it becomes a type error.
 
 </v-click>
+
+</div>
+</div>
 
 ---
 
 # Types: Literals and Enums — in aiida-core
 
-Enums used extensively for constrained state ✅
+<div class="grid grid-cols-2 gap-4">
+<div>
 
 ```python
 # aiida/common/links.py
@@ -449,225 +435,40 @@ class CalcJobState(Enum):
     PARSING = 'parsing'
 ```
 
-<v-click>
-
-Impossible to pass `"uploding"` by accident — the type checker catches it. And adding a new state forces all `match` statements to be updated.
-
-</v-click>
-
----
-
-# Types: Literals and Enums — in aiida-core (cont.)
-
-Same problem, two approaches ([#7069](https://github.com/aiidateam/aiida-core/pull/7069) vs [#7116](https://github.com/aiidateam/aiida-core/pull/7116)): control what happens on unhandled process failure
-
-<div class="grid grid-cols-2 gap-4">
-<div>
-
-**Two boolean flags** (PR #7069)
-
-```python
-spec.input('pause_for_unknown_errors',
-           valid_type=orm.Bool,
-           default=lambda: orm.Bool(False))
-spec.input('restart_once_for_unknown_errors',
-           valid_type=orm.Bool,
-           default=lambda: orm.Bool(True))
-```
-
 </div>
 <div>
 
-**One string input** (PR #7116)
-
 ```python
-spec.input('on_unhandled_failure',
-           valid_type=orm.Str,
-           required=False,
-           validator=validate_on_unhandled_failure)
-# options: 'abort', 'pause',
-#   'restart_once', 'restart_and_pause'
+# aiida/common/datastructures.py
+class StashMode(Enum):
+    COPY = 'copy'
+    COMPRESS_TAR = 'tar'
+    COMPRESS_TARBZ2 = 'tar.bz2'
+    COMPRESS_TARGZ = 'tar.gz'
+    COMPRESS_TARXZ = 'tar.xz'
+
+# aiida/orm/entities.py
+class EntityTypes(Enum):
+    AUTHINFO = 'authinfo'
+    COMMENT = 'comment'
+    COMPUTER = 'computer'
+    GROUP = 'group'
+    LOG = 'log'
+    NODE = 'node'
+    USER = 'user'
+    LINK = 'link'
 ```
 
 </div>
 </div>
 
----
-
-# Types: Literals and Enums — in aiida-core (cont.)
-
-Two booleans → deeply nested dispatch
-
-```python
-if node.is_failed and not last_report:
-    if self.inputs.restart_once_for_unknown_errors.value:       # restart enabled?
-        if self.ctx.unhandled_failure:                           #   second failure?
-            if self.inputs.pause_for_unknown_errors.value:      #     pause enabled?
-                self.ctx.paused_by_handler = True
-                self.ctx.unhandled_failure = False
-                self.pause()
-                return None
-            else:                                               #     pause disabled
-                return self.exit_codes.ERROR_SECOND_CONSECUTIVE_UNHANDLED_FAILURE
-        self.ctx.unhandled_failure = True                       #   first failure
-    else:                                                       # restart disabled
-        if self.inputs.pause_for_unknown_errors.value:          #   pause enabled?
-            self.ctx.paused_by_handler = True
-            self.pause()
-        else:                                                   #   pause disabled
-            return self.exit_codes.ERROR_UNHANDLED_FAILURE
-```
-
 <v-click>
 
-4 combinations of 2 booleans → **3 levels of nesting**, hard to follow
+Impossible to pass `"uploding"` by accident — the type checker catches it. Adding a new enum member forces all `match` statements to be updated.
 
 </v-click>
 
 ---
-
-# Types: Literals and Enums — in aiida-core (cont.)
-
-One string → flat dispatch
-
-```python
-if node.is_failed and not last_report:
-    action = self.inputs.get('on_unhandled_failure', None)
-    action = action.value if action is not None else 'abort'
-
-    if action == 'abort':
-        return self.exit_codes.ERROR_UNHANDLED_FAILURE
-    elif action == 'pause':
-        self.pause(f"Paused for inspection, see: 'verdi process report {self.node.pk}'")
-        return None
-    elif action == 'restart_once':
-        if self.ctx.unhandled_failure:
-            return self.exit_codes.ERROR_UNHANDLED_FAILURE
-        self.ctx.unhandled_failure = True
-        return None
-    elif action == 'restart_and_pause':
-        if self.ctx.unhandled_failure:
-            self.ctx.unhandled_failure = False
-            self.pause(f"Paused for inspection, see: 'verdi process report {self.node.pk}'")
-            return None
-        self.ctx.unhandled_failure = True
-        return None
-```
-
-<v-click>
-
-Same behavior, **1 level of nesting** — each case is self-contained and readable.
-
-</v-click>
-
-<!-- --- -->
-<!---->
-<!-- # Types: NewType — preventing value mix-ups -->
-<!---->
-<!-- Semantically different values deserve different types -->
-<!---->
-<!-- ```python -->
-<!-- from typing import NewType -->
-<!---->
-<!-- UserId = NewType("UserId", int) -->
-<!-- OrderId = NewType("OrderId", int) -->
-<!---->
-<!---->
-<!-- def get_order(order_id: OrderId) -> Order: ... -->
-<!---->
-<!---->
-<!-- user_id = UserId(42) -->
-<!-- get_order(user_id)  # error: UserId is not compatible with OrderId -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- - **Zero runtime cost** — `NewType` is erased at runtime -->
-<!-- - Prevents an entire class of "wrong ID" bugs -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- --- -->
-<!---->
-<!-- # Types: `@final` and `Final` — locking things down -->
-<!---->
-<!-- Prevent accidental overrides and mutations -->
-<!---->
-<!-- ```python -->
-<!-- from typing import final, Final -->
-<!---->
-<!-- MAX_RETRIES: Final = 3 -->
-<!-- MAX_RETRIES = 5  # error: cannot assign to Final variable -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- ```python -->
-<!-- from typing import final -->
-<!---->
-<!---->
-<!-- class BaseProcessor: -->
-<!--     @final -->
-<!--     def validate(self, data: bytes) -> bool: -->
-<!--         """Critical validation — subclasses must not override.""" -->
-<!--         return len(data) > 0 and data[0:4] == b"MAGIC" -->
-<!---->
-<!-- class CustomProcessor(BaseProcessor): -->
-<!--     def validate(self, data: bytes) -> bool:  # error: cannot override final -->
-<!--         return True  # oops — security bypass prevented -->
-<!-- ``` -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- - `Final` for constants — prevents reassignment -->
-<!-- - `@final` on methods — prevents override in subclasses -->
-<!-- - `@final` on classes — prevents subclassing entirely -->
-<!-- - Communicates **intent**: "this is not meant to be extended" -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- --- -->
-<!---->
-<!-- # Types: `@final` and `Final` — in aiida-core -->
-<!---->
-<!-- `@final` prevents subclassing config singletons ✅ -->
-<!---->
-<!-- ```python -->
-<!-- # aiida/manage/configuration/settings.py -->
-<!-- from typing import final -->
-<!---->
-<!-- @final -->
-<!-- class AiiDAConfigDir: -->
-<!--     """Singleton for setting and getting the path to configuration directory.""" -->
-<!--     ... -->
-<!---->
-<!-- @final -->
-<!-- class AiiDAConfigPathResolver: -->
-<!--     """For resolving configuration directory, daemon dir, daemon log dir.""" -->
-<!--     ... -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- 9 constants in the same file lack `Final` ❌ -->
-<!---->
-<!-- ```python -->
-<!-- # aiida/manage/configuration/settings.py -->
-<!-- DEFAULT_UMASK = 0o0077                       # should be Final -->
-<!-- DEFAULT_AIIDA_PATH_VARIABLE = 'AIIDA_PATH'   # should be Final -->
-<!-- DEFAULT_CONFIG_DIR_NAME = '.aiida'            # should be Final -->
-<!-- DEFAULT_CONFIG_FILE_NAME = 'config.json'      # should be Final -->
-<!-- DEFAULT_CONFIG_INDENT_SIZE = 4                # should be Final -->
-<!-- # ... 4 more -->
-<!-- ``` -->
-<!---->
-<!-- Nothing prevents `settings.DEFAULT_UMASK = 0o0000` — a subtle security issue that `Final` would catch. -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- --- -->
 
 # Types: `TypeAlias` — name your complex types
 
@@ -767,43 +568,9 @@ Any object with a `.read()` method satisfies `Readable` — **no inheritance req
 
 <v-click>
 
-- Enables **dependency inversion** — depend on abstractions, not concretions
+- **ABCs** = nominal subtyping (must inherit). **Protocols** = structural subtyping (just match the shape)
+- Works with third-party classes you don't control — `io.BytesIO` satisfies `Readable` without knowing about it
 - Makes code **testable** — pass a fake that matches the protocol
-- Matches Python's duck-typing philosophy, but **checked statically**
-
-</v-click>
-
----
-
-# Types: Protocols — in aiida-core
-
-`ProcessFunctionType` Protocol defines the full decorated function contract ✅
-
-```python
-# aiida/engine/processes/functions.py
-class ProcessFunctionType(Protocol, Generic[P, R_co, N]):
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R_co: ...
-    def run(self, *args: P.args, **kwargs: P.kwargs) -> R_co: ...
-    def run_get_node(self, ...) -> tuple[dict[str, Any] | None, N]: ...
-    is_process_function: bool
-    node_class: Type[N]
-    process_class: Type[Process]
-```
-
-<v-click>
-
-`NodeIterator` Protocol for group iteration <span class="opacity-50">✅</span>
-
-```python
-# aiida/orm/implementation/groups.py
-class NodeIterator(Protocol):
-    def __iter__(self) -> 'NodeIterator': ...
-    def __next__(self) -> BackendNode: ...
-    def __getitem__(self, value: int | slice) -> ...: ...
-    def __len__(self) -> int: ...
-```
-
-Both define structural contracts — any object matching the shape satisfies the Protocol, **no inheritance needed**.
 
 </v-click>
 
@@ -829,6 +596,8 @@ val.upper()  # no error — crashes at runtime!
 </div>
 <div>
 
+<v-click>
+
 ```python
 # With generics — return type tracks input
 from typing import TypeVar
@@ -844,6 +613,8 @@ val = first([1, 2, 3])  # val: int
 val.upper()  # error: int has no .upper()
 ```
 
+</v-click>
+
 </div>
 </div>
 
@@ -855,279 +626,68 @@ Generics keep the **type checker informed** across function boundaries.
 
 ---
 
-<!-- # Types: Generics — in aiida-core -->
-<!---->
-<!-- full generic entity hierarchy preserves types across layers ✅ -->
-<!---->
-<!-- ```python -->
-<!-- # aiida/orm/implementation/entities.py -->
-<!-- EntityType = TypeVar('EntityType', bound='BackendEntity') -->
-<!---->
-<!-- class BackendCollection(Generic[EntityType]): -->
-<!--     ENTITY_CLASS: ClassVar[Type[EntityType]] -->
-<!---->
-<!--     def create(self, **kwargs: Any) -> EntityType:  # precise return type -->
-<!--         return self.ENTITY_CLASS(backend=self._backend, **kwargs) -->
-<!-- ``` -->
-<!---->
-<!-- --- -->
-
-# Types: `@overload` — narrow return types
-
-Tell the type checker *exactly* what comes back
-
-```python
-from typing import overload
-
-
-@overload
-def parse(raw: str, as_json: Literal[True]) -> dict: ...
-@overload
-def parse(raw: str, as_json: Literal[False] = ...) -> str: ...
-
-
-def parse(raw: str, as_json: bool = False) -> dict | str:
-    return json.loads(raw) if as_json else raw
-```
-
-<v-click>
-
-```python
-result = parse('{"a": 1}', as_json=True)  # type: dict  (not dict | str!)
-result = parse("hello", as_json=False)  # type: str
-```
-
-</v-click>
-
-<v-click>
-
-- Without `@overload`, the caller always sees `dict | str` and must narrow manually
-- With `@overload`, each call site gets the **precise** return type
-- Useful for functions whose return type depends on a flag or input type
-
-</v-click>
-
----
-
-# Types: `@overload` — in aiida-core
-
-`QueryBuilder.first()` and `serialize()` both use `@overload` ✅
-
-```python
-# aiida/orm/querybuilder.py — flat flag changes return shape
-@overload
-def first(self, flat: Literal[False] = False) -> list[Any] | None: ...
-@overload
-def first(self, flat: Literal[True]) -> Any | None: ...
-def first(self, flat: bool = False) -> list[Any] | Any | None: ...
-```
-
-<v-click>
-
-```python
-# aiida/orm/utils/serialize.py — encoding flag changes return type
-@overload
-def serialize(data: Any, encoding: None = None) -> str: ...
-@overload
-def serialize(data: Any, encoding: str) -> bytes: ...
-def serialize(data: Any, encoding: str | None = None) -> str | bytes: ...
-```
-
-</v-click>
-
----
-
-<!-- # Types: `@overload` — aiida-core: mypy vs pyright -->
-<!---->
-<!-- mypy and pyright don't always agree -->
-<!---->
-<!-- ```python -->
-<!-- @overload -->
-<!-- def get_jobs(self, ..., as_dict: Literal[False] = False) -> list[JobInfo]: ... -->
-<!-- @overload -->
-<!-- def get_jobs(self, ..., as_dict: Literal[True] = True) -> dict[str, JobInfo]: ... -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- **mypy**: passes. **pyright**: error — overlapping overloads with incompatible return types. -->
-<!---->
-<!-- Calling `get_jobs()` with no args matches **both** overloads. -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- ```python -->
-<!-- # Fix: make as_dict keyword-only to avoid the overlap -->
-<!-- @overload -->
-<!-- def get_jobs(self, ..., *, as_dict: Literal[True]) -> dict[str, JobInfo]: ... -->
-<!-- #                         ^ keyword-only, no default — no ambiguity -->
-<!-- ``` -->
-<!---->
-<!-- But that's an API change — can't do it in a typing-only PR. -->
-<!---->
-<!-- **Lesson**: adding types to existing code surfaces API design decisions you never explicitly made. -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- --- -->
-
-# Types: `@singledispatch` — type-based dispatch
-
-Runtime polymorphism, checked by types
+# Types: `@overload` and `@singledispatch`
 
 <div class="grid grid-cols-2 gap-4">
 <div>
 
-```python
-from functools import singledispatch
+**`@overload`** — narrow return types statically
 
-@singledispatch
-def serialize(value: object) -> str:
-    raise TypeError(f"Cannot serialize {type(value)}")
+```python
+# aiida/orm/querybuilder.py
+@overload
+def first(
+    self, flat: Literal[False] = ...,
+) -> list[Any] | None: ...
+@overload
+def first(
+    self, flat: Literal[True],
+) -> Any | None: ...
+
+def first(
+    self, flat: bool = False,
+) -> list[Any] | Any | None: ...
 ```
+
+No `@overload`, always `list[Any] | Any | None`.
 
 </div>
 <div>
 
-```python
-@serialize.register
-def _(value: int) -> str:
-    return str(value)
-
-@serialize.register
-def _(value: list) -> str:
-    items = ", ".join(serialize(v) for v in value)
-    return f"[{items}]"
-
-@serialize.register
-def _(value: datetime) -> str:
-    return value.isoformat()
-```
-
-</div>
-</div>
-
 <v-click>
 
-- Replaces chains of `isinstance` checks with **extensible dispatch**
-- New types can register handlers **without modifying the original function**
-- `@singledispatchmethod` for class methods
-
-**vs `@overload`**: `@overload` is purely static — one function body, multiple type signatures. `@singledispatch` is runtime — separate function bodies, dispatched by the first argument's type.
-
-</v-click>
-
----
-
-# Types: `@singledispatch` — in aiida-core
-
-`@singledispatch` used to convert backend entities to ORM objects ✅
+**`@singledispatch`** — runtime dispatch by type
 
 ```python
 # aiida/orm/convert.py
 @singledispatch
 def get_orm_entity(backend_entity):
-    raise TypeError(f"No conversion for {type(backend_entity)}")
+    raise TypeError(...)
 
 @get_orm_entity.register(BackendComputer)
 def _(backend_entity):
     return Computer.from_backend_entity(backend_entity)
 ```
 
+Replaces `isinstance` chains — new types register handlers without modifying the function.
+
+</v-click>
+
+</div>
+</div>
+
 <v-click>
 
-isinstance chains that should use singledispatch ❌
-
-```python
-# aiida/tools/dbimporters/plugins/oqmd.py
-if not isinstance(values, str) and not isinstance(values, int):
-    raise ValueError(
-        f"incorrect value for keyword '{alias}' "
-        "-- only strings and integers are accepted"
-    )
-```
-
-A `@singledispatch` on the value type would be cleaner and extensible — new types could register handlers without modifying the function.
+**`@overload`** is purely static — one function body, multiple type signatures. <br>
+**`@singledispatch`** is runtime — separate function bodies, dispatched by the first argument's type.
 
 </v-click>
 
 ---
-
-# Types: `ParamSpec` — preserve decorator signatures
-
-Don't let decorators erase your function types
-
-```python
-from typing import ParamSpec, TypeVar, Callable
-
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
-def log(func: Callable[P, R]) -> Callable[P, R]:
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        print(f"calling {func.__name__}")
-        return func(*args, **kwargs)
-    return wrapper
-```
-
-<v-click>
-
-```python
-@log
-def fetch(url: str, timeout: float = 10.0) -> bytes: ...
-
-fetch(42)        # error: int is not str — signature preserved!
-fetch("https://example.com", timeout="slow")  # error: str is not float
-```
-
-</v-click>
-
----
-
-<!-- # Types: `ParamSpec` — in aiida-core -->
-<!---->
-<!-- `@calcfunction` preserves signatures via `ParamSpec` + Protocol ✅ -->
-<!---->
-<!-- ```python -->
-<!-- # aiida/engine/processes/functions.py -->
-<!-- P = ParamSpec('P') -->
-<!-- R_co = TypeVar('R_co', covariant=True) -->
-<!---->
-<!-- class ProcessFunctionType(Protocol, Generic[P, R_co, N]): -->
-<!--     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R_co: ... -->
-<!--     def run_get_node(self, *args: P.args, **kwargs: P.kwargs) -> tuple[...]: ... -->
-<!--     process_class: Type[Process] -->
-<!-- ``` -->
-<!---->
-<!-- <v-click> -->
-<!---->
-<!-- the internal decorator erases types with `*args, **kwargs` ❌ -->
-<!---->
-<!-- ```python -->
-<!-- # Same file, the actual decorator implementation -->
-<!-- @functools.wraps(function) -->
-<!-- def decorated_function(*args, **kwargs):  # signature erased! -->
-<!--     result, _ = run_get_node(*args, **kwargs) -->
-<!--     return result -->
-<!---->
-<!-- decorated_function.run = decorated_function  # type: ignore[attr-defined] -->
-<!-- decorated_function.run_get_pk = run_get_pk   # type: ignore[attr-defined] -->
-<!-- # ... 6 more type: ignore[attr-defined] lines -->
-<!-- ``` -->
-<!---->
-<!-- The `ProcessFunctionType` Protocol patches over this at the type level — but the runtime decorator still erases signatures. -->
-<!---->
-<!-- </v-click> -->
-<!---->
-<!-- --- -->
-<!---->
 
 # Types: Variance
 
-Why `list[Dog]` is not `list[Animal]` — and when that's the right call
+Why `list[Dog]` is not `list[Animal]`
 
 <div class="grid grid-cols-2 gap-4">
 <div>
@@ -1137,14 +697,13 @@ class Animal: ...
 class Dog(Animal): ...
 class Cat(Animal): ...
 
-
+# ❌ list is mutable → invariant
 def add_cat(animals: list[Animal]) -> None:
     animals.append(Cat())
 
-
 dogs: list[Dog] = [Dog(), Dog()]
-add_cat(dogs)  # error: list[Dog] is not list[Animal]
-# if allowed: dogs would contain a Cat!
+add_cat(dogs)  # type error!
+# if allowed: dogs would contain a Cat
 ```
 
 </div>
@@ -1152,71 +711,91 @@ add_cat(dogs)  # error: list[Dog] is not list[Animal]
 
 <v-click>
 
-- `list` is **invariant**: because it's mutable, the type checker must be strict — accepting `list[Dog]` where `list[Animal]` is expected would allow inserting a `Cat`
-- `Sequence` is **covariant**: it's read-only (no `append`, no `__setitem__`), so no wrong type can ever be inserted — subtyping is safe
-- The rule: **more capability → stricter variance**
-
-</v-click>
-
-</div>
-</div>
-
----
-
-# Types: Variance — prefer broad inputs, narrow outputs
-
-<v-click>
-
 ```python
+# ✅ Sequence is read-only → covariant
 from collections.abc import Sequence
 
-# accepts Sequence[Dog] ✅ — read-only, so covariance is safe
 def count_legs(animals: Sequence[Animal]) -> int:
     return sum(4 for _ in animals)
+
+count_legs(dogs)  # works!
+# can't insert a Cat — no append, no __setitem__
 ```
 
 </v-click>
 
+</div>
+</div>
+
 <v-click>
 
-This is **Postel's Law** (Robustness Principle, RFC 761):
-
-> "Be liberal in what you accept, be conservative in what you send."
-
-Accept broad input types (`Sequence`, `Mapping`), return narrow/specific types (`list`, `dict`). This maps directly to variance: covariant (read-only) inputs, invariant (mutable) outputs.
+- **Mutable** container (`list`) → **invariant**: type must match exactly, otherwise you could insert the wrong type
+- **Read-only** container (`Sequence`) → **covariant**: subtypes are safe, you can only read out
 
 </v-click>
 
 ---
 
-# Types: Variance — aiida-core: LSP violations
+# Types: Postel's Law and Liskov Substitution Principle
 
-The process hierarchy overrides `define()` with **narrower** parameter types:
+> "Be liberal in what you accept, be conservative in what you send." — Postel's Law (RFC 761)
 
-```python
-# Process (base)
-@classmethod
-def define(cls, spec: ProcessSpec) -> None:  # type: ignore[override]
-    super().define(spec)
-
-
-# CalcJob (subclass) — wants a more specific spec type
-@classmethod
-def define(cls, spec: CalcJobProcessSpec) -> None:  # type: ignore[override]
-    super().define(spec)
-    spec.inputs.validator = validate_calc_job  # type: ignore[assignment]
-```
+Accept broad input types (`Sequence`, `Mapping`), return narrow/specific types (`list`, `dict`).
 
 <v-click>
 
-Every level violates the [Liskov Substitution Principle](https://en.wikipedia.org/wiki/Liskov_substitution_principle) — a `CalcJob` can't be used everywhere a `Process` is expected if it demands a more specific spec.
+**Liskov Substitution Principle** (LSP): a subclass must accept everything its parent accepts. If it narrows parameter types, code that passes a base-type argument to the subclass will break at runtime.
 
 </v-click>
 
 <v-click>
 
-**This is not a typing limitation — it's a design signal.** Consider generic classes:
-`class Process(Generic[S]): def define(cls, spec: S)` — no override needed.
+Subclasses **extend** the parent — they should support the same feature set, not narrow it.
+
+</v-click>
+
+<div class="grid grid-cols-2 gap-4">
+<div>
+
+<v-click>
+
+```python
+# ❌ narrows Food → CatFood
+class Animal:
+    def feed(self, food: Food) -> None: ...
+
+class Cat(Animal):
+    def feed(self, food: CatFood) -> None: ...
+
+feed_all([Cat()], DogFood())  # crash!
+```
+
+</v-click>
+
+</div>
+<div>
+
+<v-click>
+
+```python
+# ✅ generics — no override needed
+F = TypeVar("F", bound=Food)
+
+class Animal(Generic[F]):
+    def feed(self, food: F) -> None: ...
+
+class Cat(Animal[CatFood]):
+    def feed(self, food: CatFood) -> None: ...
+```
+
+</v-click>
+
+</div>
+</div>
+
+<v-click>
+
+**In aiida-core:** `CalcJob.define(spec: CalcJobProcessSpec)` narrows from `Process.define(spec: ProcessSpec)` — same pattern, suppressed with `type: ignore[override]`.
 
 </v-click>
 

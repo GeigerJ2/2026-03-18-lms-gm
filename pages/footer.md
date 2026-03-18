@@ -1,43 +1,37 @@
-# Putting it all together
+# Putting it all together — API design
 
-API design principles
-
-| Principle | Benefit |
+| **Principle** | **Benefit** |
 |---|---|
 | Flat imports | File structure is an implementation detail |
 | Naming | Short as possible, clear as necessary |
-| Avoid global state | Use instances, `ContextVar` for thread safety |
-| Pit of success | Safe defaults, explicit opt-out for danger |
-| Progressive disclosure | Simple things simple, complex things possible |
 | Immutability | Fewer surprises, thread safety |
-| Context managers | Automatic resource cleanup |
-| Errors | Custom exception hierarchy, never bare `Exception` |
-
----
-
-# Putting it all together (cont.)
-
-Type system tools
-
-| Principle | Benefit |
-|---|---|
-| Typed signatures | Self-documenting, machine-checkable contracts |
-| dataclass / TypedDict | Structured data with typo detection |
-| Enums / Literals | Constrained inputs, exhaustiveness checking |
-| NewType | Prevent value mix-ups at zero cost |
-| Protocols | Flexible abstractions, testability |
-| Generics | Preserve type info across boundaries |
-| @overload | Precise return types per call signature |
-| @singledispatch | Extensible runtime dispatch by type |
-| ParamSpec | Decorators that preserve signatures |
-| Final / @final | Lock down constants and methods |
-| Variance | Read-only → covariant, mutable → invariant |
+| Pit of success | Safe defaults, explicit opt-out |
+| Progressive disclosure | Simple things simple, complex things possible |
+| Input representation | Right abstraction reduces nesting |
 
 <v-click>
 
-**Types are not just for catching bugs** — they shape how you think about your API.
+**Types and API design reinforce each other** — types make your API contract explicit, and a well-designed API is easy to type. When a type is hard to write, the design needs work.
 
-When a type is hard to write, it's a signal that the design needs work.
+</v-click>
+
+---
+
+# Putting it all together — Type system
+
+| **Tool** | **Benefit** |
+|---|---|
+| Typed signatures | Machine-checkable contracts |
+| dataclass / TypedDict | Structured data, typo detection |
+| Enums / Literals | Constrained inputs, exhaustiveness |
+| Protocols | Flexible abstractions, testability |
+| Generics | Preserve type info across boundaries |
+| @overload / @singledispatch | Precise dispatch by type |
+| Variance / LSP | Subtyping done right |
+
+<v-click>
+
+**Types and API design reinforce each other** — types make your API contract explicit, and a well-designed API is easy to type. When a type is hard to write, the design needs work.
 
 </v-click>
 
@@ -50,7 +44,9 @@ class: text-center
 
 <div class="text-2xl mt-4 opacity-80">
 
-Well-typed code is well-designed code.
+A good API is easy to type. Well-typed code is well-designed code.
+
+They enforce each other — types surface design flaws, and clean design makes types simple.
 
 </div>
 
@@ -69,6 +65,20 @@ Rewrite it in Rust
 
 </div>
 
+
+---
+layout: center
+class: text-center
+---
+
+# Alternative conclusion
+
+<div class="text-2xl mt-4 opacity-80">
+
+Time for `aiida-core v3`?!
+
+</div>
+
 ---
 layout: center
 class: text-center
@@ -79,14 +89,26 @@ class: text-center
 <div class="text-left inline-block">
 
 - Ben Hoyt — [*Designing Pythonic library APIs*](https://benhoyt.com/writings/python-api-design/) (2023)
-- [PEP 544 — Protocols: Structural subtyping](https://peps.python.org/pep-0544/)
+- Reviewing typing PRs by Daniel Hollas
+- `Claude Code`
+
+## Relevant PEPs
+
+- [PEP 484 — Type Hints](https://peps.python.org/pep-0484/) (`@overload`, generics, variance)
+- [PEP 544 — Protocols](https://peps.python.org/pep-0544/) (structural subtyping)
+- [PEP 567 — Context Variables](https://peps.python.org/pep-0567/) (`ContextVar`)
+- [PEP 586 — Literal Types](https://peps.python.org/pep-0586/)
 - [PEP 589 — TypedDict](https://peps.python.org/pep-0589/)
-- [PEP 484 — Type Hints](https://peps.python.org/pep-0484/)
-- [PEP 612 — ParamSpec](https://peps.python.org/pep-0612/)
-- [PEP 742 — TypeIs](https://peps.python.org/pep-0742/)
-- [Python docs — `typing` module](https://docs.python.org/3/library/typing.html)
-- [Pyright](https://github.com/microsoft/pyright) / [mypy](https://mypy-lang.org/) — static type checkers
+- [PEP 612 — ParamSpec](https://peps.python.org/pep-0612/) (decorator signatures)
+- [PEP 613 — TypeAlias](https://peps.python.org/pep-0613/)
 
 </div>
+
+---
+layout: center
+class: text-center
+---
+
+# Thank you!
 
 <PoweredBySlidev mt-10 />
