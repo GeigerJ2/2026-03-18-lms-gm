@@ -21,7 +21,6 @@ print(response.status)
 ```
 
 </div>
-<div class="flex items-start pt-2">
 <div>
 
 <v-click>
@@ -36,10 +35,9 @@ Could you write this from scratch?
 
 </div>
 </div>
-</div>
 
 <v-click>
-A good API shouldn't require a tutorial for basic operations!
+**A good API shouldn't require a tutorial for basic operations!**
 </v-click>
 
 ---
@@ -62,6 +60,8 @@ Same task, which code would you rather write? **API design matters.**
 In the following slides, we'll explore what makes an API good, drawing on principles from Ben Hoyt's [*Designing Pythonic library APIs*](https://benhoyt.com/writings/python-api-design/).
 
 We'll use a fictional `fishnchips` library as a running example, alongside real examples from `aiida-core`.
+
+<div class="absolute bottom-4 left-12 text-xs opacity-50">Ben Hoyt — <i>Designing Pythonic library APIs</i> · benhoyt.com/writings/python-api-design/ (2023)</div>
 
 </v-click>
 
@@ -145,9 +145,9 @@ Don't name your function `order_fishnchips` — `fishnchips.order()` reads natur
 
 Same reason `requests.get()` works — you're not meant to `from requests import get`.
 
-Think about how you want users to interact with your library?
+Think about how you want users to interact with your library.
 
-@mbercx: _docs-driven_ development helps flesh out the API
+@mbercx: _docs-driven_ development helps flesh out the API.
 
 </v-click>
 
@@ -174,6 +174,8 @@ kpoints.set_kpoints_mesh([4, 4, 4])
 </div>
 <div>
 
+<v-click>
+
 ```python
 # let the class name provide context ✅
 class KpointsData(ArrayData):
@@ -184,6 +186,8 @@ class KpointsData(ArrayData):
 kpoints.set_mesh([4, 4, 4])
 mesh = kpoints.get_mesh()
 ```
+
+</v-click>
 
 </div>
 </div>
@@ -239,11 +243,11 @@ Tools: `tuple` over `list`, `frozenset`, `frozen=True` dataclasses
 
 <v-click>
 
-**In aiida-core:** Slurm scheduler mutated the caller's job list by reference — fix: `list` → `frozenset` + defensive copy ([#7155](https://github.com/aiidateam/aiida-core/pull/7155) by @GeigerJ2 and @khsrali)
-
-</v-click>
+**In aiida-core:** Slurm scheduler mutated the caller's job list by reference — fix: `list` → `frozenset` + defensive copy ([#7155](https://github.com/aiidateam/aiida-core/pull/7155) by @GeigerJ2 and @khsrali).
 
 <div class="absolute bottom-4 left-12 text-xs opacity-50">#7155: <i>Fix: Avoid mutating JobsList._polling_jobs inside slurm scheduler</i></div>
+
+</v-click>
 
 ---
 
@@ -397,7 +401,7 @@ Same problem, two approaches ([#7069](https://github.com/aiidateam/aiida-core/pu
 <div class="grid grid-cols-2 gap-4">
 <div>
 
-**Two boolean flags** (PR #7069)
+**Two boolean flags** (PR #7069, closed)
 
 ```python
 # aiida/engine/processes/workchains/restart.py
@@ -416,7 +420,7 @@ spec.input(
 </div>
 <div>
 
-**One string input** (PR #7116)
+**One string input** (PR #7116, by @mbercx, merged)
 
 ```python
 # aiida/engine/processes/workchains/restart.py

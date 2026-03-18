@@ -34,7 +34,7 @@ class: text-center
 
 A good API is easy to type. Well-typed code is well-designed code.
 
-They enforce each other — types surface design flaws, and clean design makes types simple.
+**They enforce each other** — types surface design flaws, and clean design makes types simple.
 
 </div>
 

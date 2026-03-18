@@ -25,7 +25,7 @@ Your library's API is the **surface area** that every user touches
 - **You spend more time reading code than writing it** — API clarity pays off every day
 - Code without types is implicit knowledge that lives in someone's head
 - Types are the **machine-checkable** part of the API contract
-- When a type is hard to write, it's often a signal that the design/API needs work
+- When a type is hard to write, it's often a **signal that the design needs work**
 
 ---
 
@@ -56,8 +56,8 @@ Your library's API is the **surface area** that every user touches
 5. TypedDict and dataclasses over plain dicts
 6. Literals and Enums over bare strings
 7. `TypeAlias` — name your complex types
-8. Protocols and abstract interfaces
-9. Generics — preserving type information
+8. Generics — preserving type information
+9. Protocols and abstract interfaces
 10. `@overload` and `@singledispatch`
 11. Variance & Postel's Law / LSP
 

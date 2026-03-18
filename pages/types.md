@@ -138,9 +138,15 @@ The type checker **forces you to decide**: return `str | None`? Or raise on miss
 
 <v-click>
 
-**In aiida-core:** adding types to the scheduler module revealed wrong return types, `str` assigned where `int` was expected, and silent `None` returns ([#7156](https://github.com/aiidateam/aiida-core/pull/7156) by @danielhollas)
+**In aiida-core:** adding types to the scheduler module revealed wrong return types, `str` assigned where `int` was expected, and silent `None` returns ([#7156](https://github.com/aiidateam/aiida-core/pull/7156) by @danielhollas).
 
 <div class="absolute bottom-4 left-12 text-xs opacity-50">#7156: <i>Add typing to scheduler plugins</i></div>
+
+</v-click>
+
+<v-click>
+
+**Annotate immediately**, fix flaws, avoid releasing unpolished API to avoid being stuck because of backwards compatibility.
 
 </v-click>
 
@@ -429,7 +435,9 @@ class EntityTypes(Enum):
 
 <v-click>
 
-Impossible to pass `"uploding"` by accident — the type checker catches it. Adding a new enum member forces all `match` statements to be updated.
+Impossible to pass `"uploding"` by accident — the type checker catches it.
+
+Adding a new enum member forces all `match` statements to be updated.
 
 </v-click>
 
@@ -508,39 +516,6 @@ def get_retrieve_list(
 
 ---
 
-# Types: Protocols and abstract interfaces
-
-Depend on behavior, not implementation
-
-```python
-from typing import Protocol
-
-
-class Readable(Protocol):
-    def read(self, n: int = -1) -> bytes: ...
-
-
-def process_data(source: Readable) -> None:
-    data = source.read()
-    ...
-```
-
-<v-click>
-
-Any object with a `.read()` method satisfies `Readable` — **no inheritance required**.
-
-</v-click>
-
-<v-click>
-
-- **ABCs** = nominal subtyping (must inherit). **Protocols** = structural subtyping (just match the shape)
-- Works with third-party classes you don't control — `io.BytesIO` satisfies `Readable` without knowing about it
-- Makes code **testable** — pass a fake that matches the protocol
-
-</v-click>
-
----
-
 # Types: Generics — preserving type information
 
 Don't lose type precision through transformations
@@ -586,6 +561,39 @@ val.upper()  # error: int has no .upper()
 <v-click>
 
 Generics keep the **type checker informed** across function boundaries.
+
+</v-click>
+
+---
+
+# Types: Protocols and abstract interfaces
+
+Depend on behavior, not implementation
+
+```python
+from typing import Protocol
+
+
+class Readable(Protocol):
+    def read(self, n: int = -1) -> bytes: ...
+
+
+def process_data(source: Readable) -> None:
+    data = source.read()
+    ...
+```
+
+<v-click>
+
+Any object with a `.read()` method satisfies `Readable` — **no inheritance required**.
+
+</v-click>
+
+<v-click>
+
+- **ABCs** = nominal subtyping (must inherit). **Protocols** = structural subtyping (just match the shape).
+- Works with third-party classes you don't control — `io.BytesIO` satisfies `Readable` without knowing about it
+- Makes code **testable** — pass a fake that matches the protocol
 
 </v-click>
 
