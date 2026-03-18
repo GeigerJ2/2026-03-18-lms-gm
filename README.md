@@ -1,11 +1,28 @@
-# Welcome to [Slidev](https://github.com/slidevjs/slidev)!
+# Why API and types matter
 
-To start the slide show:
+Slidev presentation for the LMS Seminar, 18 March 2026.
 
-- `pnpm install`
-- `pnpm dev`
-- visit <http://localhost:3030>
+## Content
 
-Edit the [slides.md](./slides.md) to see the changes.
+- `slides.md` — main deck (title, outline, section transitions)
+- `pages/api.md` — API design slides
+- `pages/types.md` — type system slides
+- `pages/footer.md` — summary, conclusions, references
 
-Learn more about Slidev at the [documentation](https://sli.dev/).
+## View the presentation
+
+Run the dev server:
+
+```bash
+bunx slidev
+```
+
+Opens at http://localhost:3030.
+
+## Exports
+
+Pre-built exports are in `exports/`:
+
+- `slides-spa.zip` — interactive SPA (unzip, then serve with `python -m http.server --directory dist` and open http://localhost:8000)
+- `slides-export.pdf` — PDF with click steps
+- `slides-export.pptx` — PowerPoint (slides as images)
