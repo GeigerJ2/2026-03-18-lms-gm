@@ -47,9 +47,13 @@ class: text-center
 
 <div class="text-2xl mt-4 opacity-80">
 
+<v-click>
+
 Rewrite it in Rust
 
 🦀
+
+</v-click>
 
 </div>
 
@@ -63,7 +67,11 @@ class: text-center
 
 <div class="text-2xl mt-4 opacity-80">
 
+<v-click>
+
 Time for `aiida-core v3`?!
+
+</v-click>
 
 </div>
 

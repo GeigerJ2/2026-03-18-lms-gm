@@ -362,9 +362,8 @@ from typing import assert_never
 
 class LogLevel(Enum):
     DEBUG = "debug"
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
+    # INFO = "info" 
+    # Adding this will break if not explicitly handled
 
 def set_log_level(level: LogLevel) -> None:
     match level:
@@ -410,14 +409,6 @@ class CalcJobState(Enum):
 <div>
 
 ```python
-# aiida/common/datastructures.py
-class StashMode(Enum):
-    COPY = 'copy'
-    COMPRESS_TAR = 'tar'
-    COMPRESS_TARBZ2 = 'tar.bz2'
-    COMPRESS_TARGZ = 'tar.gz'
-    COMPRESS_TARXZ = 'tar.xz'
-
 # aiida/orm/entities.py
 class EntityTypes(Enum):
     AUTHINFO = 'authinfo'
@@ -428,18 +419,18 @@ class EntityTypes(Enum):
     NODE = 'node'
     USER = 'user'
     LINK = 'link'
+
+# aiida/common/datastructures.py
+class StashMode(Enum):
+    COPY = 'copy'
+    COMPRESS_TAR = 'tar'
+    COMPRESS_TARBZ2 = 'tar.bz2'
+    COMPRESS_TARGZ = 'tar.gz'
+    COMPRESS_TARXZ = 'tar.xz'
 ```
 
 </div>
 </div>
-
-<v-click>
-
-Impossible to pass `"uploding"` by accident — the type checker catches it.
-
-Adding a new enum member forces all `match` statements to be updated.
-
-</v-click>
 
 ---
 
@@ -592,7 +583,6 @@ Any object with a `.read()` method satisfies `Readable` — **no inheritance req
 <v-click>
 
 - **ABCs** = nominal subtyping (must inherit). **Protocols** = structural subtyping (just match the shape).
-- Works with third-party classes you don't control — `io.BytesIO` satisfies `Readable` without knowing about it
 - Makes code **testable** — pass a fake that matches the protocol
 
 </v-click>
@@ -658,117 +648,27 @@ Replaces `isinstance` chains — new types register handlers without modifying t
 
 ---
 
-# Types: Variance
+# Types: Variance, Postel's Law and LSP
 
-Why `list[Dog]` is not `list[Animal]`
-
-<div class="grid grid-cols-2 gap-4">
-<div>
-
-```python
-class Animal: ...
-class Dog(Animal): ...
-class Cat(Animal): ...
-
-# ❌ list is mutable → invariant
-def add_cat(animals: list[Animal]) -> None:
-    animals.append(Cat())
-
-dogs: list[Dog] = [Dog(), Dog()]
-add_cat(dogs)  # type error!
-# if allowed: dogs would contain a Cat
-```
-
-</div>
-<div>
+**Variance** — why `list[Dog]` is not `list[Animal]`
+- **Mutable** (`list`) → **invariant**: allowing `list[Dog]` as `list[Animal]` lets you `append(Cat())` — your dog list now has a cat
+- **Read-only** (`Sequence`) → **covariant**: no mutation possible, so `Sequence[Dog]` *is* `Sequence[Animal]`
 
 <v-click>
 
-```python
-# ✅ Sequence is read-only → covariant
-from collections.abc import Sequence
+<hr class="my-2 opacity-50 border-t-4" />
 
-def count_legs(animals: Sequence[Animal]) -> int:
-    return sum(4 for _ in animals)
-
-count_legs(dogs)  # works!
-# can't insert a Cat — no append, no __setitem__
-```
-
-</v-click>
-
-</div>
-</div>
-
-<v-click>
-
-- **`list` is mutable** → **invariant**: if `list[Dog]` were accepted as `list[Animal]`, a function could `append(Cat())` — your `list[Dog]` would secretly contain a `Cat`. The type checker would have lied. So neither is a subtype of the other.
-- **`Sequence` is read-only** → **covariant**: no `append`, no `__setitem__` — nothing wrong can be inserted. Every `Dog` *is* an `Animal`, so every read is safe. `Sequence[Dog]` *is* a `Sequence[Animal]`.
-
-</v-click>
-
----
-
-# Types: Postel's Law and Liskov Substitution Principle
-
-> "Be liberal in what you accept, be conservative in what you send." — Postel's Law (RFC 761)
-
-Accept broad input types (`Sequence`, `Mapping`), return narrow/specific types (`list`, `dict`).
-
-<v-click>
-
-**Liskov Substitution Principle** (LSP): a subclass must accept everything its parent accepts. If it narrows parameter types, code that passes a base-type argument to the subclass will break at runtime.
+**Postel's Law** — "Be liberal in what you accept, be conservative in what you send" (RFC 761)
+- Accept broad input types (`Sequence`, `Mapping`), return narrow types (`list`, `dict`)
 
 </v-click>
 
 <v-click>
 
-Subclasses **extend** the parent — they should support the same feature set, not narrow it.
+<hr class="my-2 opacity-50 border-t-4" />
 
-</v-click>
-
-<div class="grid grid-cols-2 gap-4">
-<div>
-
-<v-click>
-
-```python
-# ❌ narrows Food → CatFood
-class Animal:
-    def feed(self, food: Food) -> None: ...
-
-class Cat(Animal):
-    def feed(self, food: CatFood) -> None: ...
-
-feed_all([Cat()], DogFood())  # crash!
-```
-
-</v-click>
-
-</div>
-<div>
-
-<v-click>
-
-```python
-# ✅ generics — no override needed
-F = TypeVar("F", bound=Food)
-
-class Animal(Generic[F]):
-    def feed(self, food: F) -> None: ...
-
-class Cat(Animal[CatFood]):
-    def feed(self, food: CatFood) -> None: ...
-```
-
-</v-click>
-
-</div>
-</div>
-
-<v-click>
-
-**In aiida-core:** `CalcJob.define(spec: CalcJobProcessSpec)` narrows from `Process.define(spec: ProcessSpec)` — same pattern, suppressed with `type: ignore[override]`.
+**Liskov Substitution Principle (LSP)** — a subclass must accept everything its parent accepts. Narrowing parameter types breaks callers at runtime.
+- **In aiida-core:** `CalcJob.define(spec: CalcJobProcessSpec)` narrows from `Process.define(spec: ProcessSpec)` — suppressed with `type: ignore[override]`
 
 </v-click>
 

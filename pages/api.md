@@ -37,7 +37,9 @@ Could you write this from scratch?
 </div>
 
 <v-click>
+
 **A good API shouldn't require a tutorial for basic operations!**
+
 </v-click>
 
 ---

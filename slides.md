@@ -21,10 +21,8 @@ LMS Seminar · 18 Mar 2026
 Your library's API is the **surface area** that every user touches
 
 - A bad API leads to bugs, frustration, and misuse
-- A good API makes the "right thing" easy and the "wrong thing" hard
-- **You spend more time reading code than writing it** — API clarity pays off every day
+- **More time is spent reading code than writing it** — API clarity pays off every day
 - Code without types is implicit knowledge that lives in someone's head
-- Types are the **machine-checkable** part of the API contract
 - When a type is hard to write, it's often a **signal that the design needs work**
 
 ---
